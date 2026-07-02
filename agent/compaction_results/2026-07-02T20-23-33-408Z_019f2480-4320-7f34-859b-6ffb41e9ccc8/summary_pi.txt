@@ -1,0 +1,29 @@
+**Project:** `pi-smart-compact`
+**Objective:** Replace Pi's built-in compaction with a prompt-only mechanism to produce minimal, high-signal continuation context.
+**Status:** Research complete, implementation code finalized but unvalidated in live session.
+
+### ✅ Completed Work
+1.  **Research & Synthesis:**
+    *   Analyzed Pi’s built-in compaction (baseline failures: truncation, lack of strategy).
+    *   Analyzed `trace-v2` patterns (decision traces, evidence links, episode boundaries).
+    *   Reviewed academic papers (ACE, GAM, STRATUS) for context engineering principles.
+    *   Created `Consolidated Findings` documenting what to preserve (structured sections, evidence, incremental merge) and remove (truncated tools, generic instructions).
+2.  **Artifact Creation:**
+    *   `NORTH-STAR.md`: Defines goal (prompt-only compaction, no side-storage for first milestone).
+    *   `DRAFT_COMPACTION_PROMPT.md`: Finalized compaction prompt incorporating all findings.
+    *   `README.md`, `CONCEPTS`, `PATTERNS`: Documentation for context pointers, minimal progress capsules, and evidence-linked traces.
+3.  **Extension Development:**
+    *   Identified that `session_before_compact` is the correct hook.
+    *   Solved authentication issue: Pi's `ctx.modelRegistry` provides access to API keys/model definitions, allowing `complete()` calls within extensions.
+    *   Implemented `index.ts` logic to intercept compaction, load prompt from MD, resolve model/auth via `ctx`, and return custom summary.
+
+### ⚠️ Key Context & Constraints
+*   **Prompt-Only Constraint:** The first milestone must rely solely on the LLM prompt. No external retrieval systems or side-file lookups during runtime compaction.
+*   **Auth Resolution:** Extensions cannot access `modelRegistry` directly via standard imports; it is bound to the event handler context (`ctx`). Must use `ctx.modelRegistry.getApiKeyAndHeaders(model)` to authenticate.
+*   **Fallback:** If LLM call fails, extension must fall back to Pi's native compaction to avoid session disruption.
+*   **Validation Gap:** The extension code (`index.ts`) and prompt (`DRAFT_COMPACTION_PROMPT.md`) have been theoretically verified and simulated locally but have **never been tested in a live Pi session**.
+
+### 🔜 Remaining Tasks
+1.  **Live Validation:** Deploy the extension to a live Pi session to verify that `ctx.modelRegistry` correctly resolves auth and that the custom compaction output meets quality standards.
+2.  **Refine Prompt:** Iterate on `DRAFT_COMPACTION_PROMPT.md` based on live output quality (checking for hallucination, completeness, and token efficiency).
+3.  **Edge Case Handling:** Ensure robust handling of model resolution errors or missing API keys in production environments.
