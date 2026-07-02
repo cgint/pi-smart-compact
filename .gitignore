@@ -24,3 +24,12 @@ dist/
 *.swp
 *.swo
 *~
+
+# Testing sessions (client data — public repo)
+testing/sessions/
+
+# Testing outputs (generated, not source)
+testing/compaction_results/
+testing/evaluation_slot_*.md
+testing/scores_*.json
+testing/evaluation_report*.md
