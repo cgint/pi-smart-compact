@@ -1,52 +1,80 @@
 ## Goal
-Develop and validate a "prompt-only" compaction mechanism for Pi sessions that serves as a drop-in replacement for Pi's built-in compaction. The primary objective is to intercept the `session_before_compact` hook, generate a high-signal, minimal continuation context via an LLM call (using a custom prompt defined in `findings/DRAFT_COMPACTION_PROMPT.md`), and return it to Pi, ensuring graceful fallback if the LLM call fails.
+Create a structured summary of the `pi-smart-compact` project status, specifically focusing on the completion of the research phase (Phase 1) and the validation of the technical approach for implementing a prompt-only compaction mechanism.
 
 ## Constraints & Preferences
-- **Prompt-Only Milestone:** The first milestone must rely solely on a prompt-based transformation; no side-storage, lookup tables, or external retrieval systems during the compaction act.
-- **Graceful Degradation:** If the custom LLM call fails, the extension must automatically fall back to Pi's native compaction to avoid session disruption.
-- **Auth Handling:** Must use Pi's internal `ctx.modelRegistry` for authentication; cannot construct external auth or bypass Pi's security layers.
-- **Output Structure:** The generated compaction must follow a specific structured format (Goal, Constraints, Progress, Decisions, Next Steps, Critical Context) to ensure readability for subsequent agents.
-- **Preservation Rules:** Must preserve exact file paths, function names, error messages, and the last ~20K tokens of conversation verbatim.
+- **Format**: Must follow the specific Markdown checklist structure provided in the prompt.
+- **Scope**: Summarize the provided conversation history which includes file reads, research findings, and technical investigation.
+- **Preservation**: Keep exact file paths, function names, and error messages.
 
 ## Progress
 ### Done
-- [x] Conducted comprehensive research on Pi's built-in compaction (baseline), trace-v2 patterns, implementation code strategies, and academic papers (ACE, GAM, etc.).
-- [x] Synthesized findings into `findings/CONSOLIDATED_FINDINGS.md` and individual slice files (`01-` through `06-`).
-- [x] Identified the critical failure of previous extension attempts (auth/model access issues).
-- [x] Developed and documented the "Fixed Approach" using `ctx.modelRegistry` in `findings/06-fixed-approach.md`.
-- [x] Created the draft compaction prompt in `findings/DRAFT_COMPACTION_PROMPT.md`.
-- [x] Established the project structure and handoff documentation (`HANDOFF.md`, `NORTH-STAR.md`, `README.md`).
+- [x] Executed `find . -name "*.md"` to locate all documentation in the project.
+- [x] Read and analyzed `NORTH-STAR.md`: Defined the goal as creating a prompt-only compaction mechanism that outputs minimal, high-signal context without side-storages.
+- [x] Read and analyzed `README.md` and `HANDOFF.md`: Understood the project architecture, installation, and handoff protocol.
+- [x] Read and analyzed `plan.md`: Identified the phased approach (Collect -> Synthesize) and current status as completing Phase 1 (Research).
+- [x] Read and analyzed `status/coverage.md`: Verified coverage of key research areas.
+- [x] Read and analyzed `sources/research-map.md`: Reviewed the mapping of sources to concepts.
+- [x] Read and analyzed consolidated findings from `findings/` directory:
+    - **Baseline**: Analyzed Pi's built-in compaction (`compaction.js`), identifying strengths (structured template, incremental merge, file op tracking) and weaknesses (truncation, lack of strategic guidance).
+    - **Trace-v2**: Analyzed decision traces, confirming high rationale/evidence coverage (96.4%) and episode-based boundaries.
+    - **Implementation**: Confirmed strategies like preserving structured sections and incremental updates.
+    - **Papers**: Reviewed ACE/GAM papers for theoretical grounding (evolving playbooks, structured updates).
+- [x] Investigated technical feasibility of extension-based compaction:
+    - Attempted `session_before_compact` with `completeSimple()`: Failed due to null model/auth issues.
+    - Attempted model resolution via `branchEntries` + `models.json`: Failed due to inaccessible `modelRegistry` auth.
+    - **Final Solution**: Validated using `ctx.modelRegistry` within `session_before_compact` hook, aligning with Pi's official example pattern.
+- [x] Drafted `DRAFT_COMPACTION_PROMPT.md`: Created a specialized prompt based on research findings, featuring "Big Picture," "Work Stream Evolution," and strict exclusion rules.
 
 ### In Progress
-- [ ] Implementing the TypeScript extension code (`index.ts`) based on the `06-fixed-approach.md` solution.
-- [ ] Integrating the `DRAFT_COMPACTION_PROMPT.md` content into the extension logic.
-- [ ] Testing the extension locally to verify `session_before_compact` interception and successful compaction return.
+- [ ] None explicitly blocked, but the next logical step is synthesizing the draft prompt into the final `findings/DRAFT_COMPACTION_PROMPT.md` if not already committed, or testing it via `agent/simulate_compaction.py`.
 
 ### Blocked
-- [ ] **Validation Gap:** The MVP prompt has been simulated but not yet validated against a live Pi session due to the need for the working extension code.
-- [ ] **Auth Complexity:** Requires careful handling of `ctx.modelRegistry` to resolve API keys correctly for the target model (e.g., `8001-sparky`).
+- [None]
 
 ## Key Decisions
-- **[Architecture Change]**: Switched from attempting to inject custom prompts into Pi's internal JS engine to building a standalone Node.js extension that intercepts the `session_before_compact` event.
-- **[Auth Resolution]**: Decided to use `ctx.modelRegistry.getApiKeyAndHeaders(model)` provided by Pi's runner context rather than deriving auth manually, which previously caused failures.
-- **[Compaction Strategy]**: Adopted a "structured summary" approach inspired by Pi's existing template but enhanced with "evidence-linked decisions" and "context pointers" for lower-priority details, based on ACE paper principles.
-- **[Fallback Mechanism]**: Explicitly implemented a try-catch block around the LLM call to revert to Pi's default behavior on failure, ensuring stability.
+- **[Prompt-Only First Milestone]**: The project prioritizes a prompt-based solution over side-storage systems to minimize complexity and latency.
+- **[Technical Implementation Path]**: The extension must use `ctx.modelRegistry` inside `session_before_compact` to bypass authentication hurdles encountered in earlier attempts.
+- **[Compaction Strategy]**: The compaction logic should preserve "Work Stream Evolution" (trajectory of changes) rather than just current state, based on trace-v2 findings.
+- **[Structure Preservation]**: The output format must maintain explicit sections (Goal, Constraints, Progress, Decisions, Next Steps, Critical Context) to ensure interoperability with downstream agents.
 
 ## Next Steps
-1. Write the `index.ts` extension entry point that listens for `session_before_compact`.
-2. Implement the logic to read `findings/DRAFT_COMPACTION_PROMPT.md` and serialize the session history for the LLM call.
-3. Use `ctx.model` and `ctx.modelRegistry` to make the LLM completion request.
-4. Map the LLM response to the `SessionBeforeCompactResult` type and return it.
-5. Install the extension (`pipa install -c .`) and test with a sample Pi session to verify compaction occurs and fallback works on error.
+1. Finalize `findings/DRAFT_COMPACTION_PROMPT.md` based on the successful technical validation and research synthesis.
+2. Run `agent/simulate_compaction.py` against sample sessions to validate the new prompt's effectiveness.
+3. Begin Phase 2: Synthesize findings into the final production-ready prompt.
+4. Update `status/coverage.md` to reflect completion of Phase 1 and start of Phase 2.
 
 ## Critical Context
-- **Key Files:**
-    - `findings/06-fixed-approach.md`: Contains the technical solution for auth and model resolution.
-    - `findings/DRAFT_COMPACTION_PROMPT.md`: The actual prompt string used for compaction.
-    - `index.ts`: The target file for the extension code (currently empty/not written).
-    - `package.json` / `tsconfig.json`: Project configuration for the extension.
-- **Technical Details:**
-    - Pi Version: v0.80.3.
-    - Hook: `session_before_compact` receives `(event, ctx)`.
-    - Auth: `ctx.modelRegistry` is available in the handler context.
-    - Return Type: Must conform to `SessionBeforeCompactResult` from Pi's types.
+- **Project Root**: `/Users/cgint/dev/concepts/pi-smart-compact`
+- **Key Files**:
+    - `NORTH-STAR.md`: Defines the "prompt-only" constraint.
+    - `findings/DRAFT_COMPACTION_PROMPT.md`: The current artifact being refined.
+    - `findings/CONSOLIDATED_FINDINGS.md`: Contains the synthesized rules (P1-P7, F1-F5).
+    - `06-fixed-approach.md`: Documents the successful `ctx.modelRegistry` implementation pattern.
+- **Pi Version**: v0.80.3 (source located at `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/`).
+- **Error History**: Previous failures involved `completeSimple()` throwing auth errors because `modelRegistry` was not accessible in the extension context without the proper binding.
+
+<read-files>
+/Users/cgint/dev-external/pi-smart-compact/NORTH-STAR.md
+/Users/cgint/dev-external/pi-smart-compact/README.md
+/Users/cgint/dev-external/pi-smart-compact/plan.md
+/Users/cgint/dev-external/pi-smart-compact/HANDOFF.md
+/Users/cgint/dev-external/pi-smart-compact/initial_session.md
+/Users/cgint/dev-external/pi-smart-compact/sources/research-map.md
+/Users/cgint/dev-external/pi-smart-compact/findings/CONSOLIDATED_FINDINGS.md
+/Users/cgint/dev-external/pi-smart-compact/findings/01-pi-compaction-baseline.md
+/Users/cgint/dev-external/pi-smart-compact/findings/02-trace-v2-patterns.md
+/Users/cgint/dev-external/pi-smart-compact/findings/03-implementation-code-strategies.md
+/Users/cgint/dev-external/pi-smart-compact/findings/04-papers-research.md
+/Users/cgint/dev-external/pi-smart-compact/findings/05-extension-compaction-analysis.md
+/Users/cgint/dev-external/pi-smart-compact/findings/06-fixed-approach.md
+/Users/cgint/dev-external/pi-smart-compact/findings/PI_BUILTIN_COMPACTION_PROMPTS.md
+/Users/cgint/dev-external/pi-smart-compact/findings/DRAFT_COMPACTION_PROMPT.md
+/Users/cgint/dev-external/pi-smart-compact/concepts/context-pointers.md
+/Users/cgint/dev-external/pi-smart-compact/concepts/compaction-principles.md
+/Users/cgint/dev-external/pi-smart-compact/concepts/budget-and-storage-aware-compaction.md
+/Users/cgint/dev-external/pi-smart-compact/agent/compaction_test_prompt.md
+/Users/cgint/dev-external/pi-smart-compact/status/coverage.md
+/Users/cgint/dev-external/pi-smart-compact/patterns/evidence-linked-traces.md
+/Users/cgint/dev-external/pi-smart-compact/patterns/minimal-progress-capsule.md
+/Users/cgint/dev-external/pi-smart-compact/patterns/handoff-context-brief.md
+</read-files>

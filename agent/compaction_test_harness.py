@@ -33,7 +33,12 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_URL = os.environ.get("COMPACT_MODEL_URL", "http://sparky:8001/v1/chat/completions")
 MODEL_ID = os.environ.get("COMPACT_MODEL_ID", "qwen36-35b-nvidia-nvfp4")
-MAX_TOKENS = int(os.environ.get("COMPACT_MAX_TOKENS", "4096"))
+RESERVE_TOKENS = int(os.environ.get("COMPACT_RESERVE_TOKENS", "16384"))  # Pi default
+MODEL_MAX_TOKENS = int(os.environ.get("COMPACT_MODEL_MAX_TOKENS", "32768"))  # sparky default
+
+def calc_max_tokens():
+    """Pi's formula: min(0.8 * reserveTokens, model.maxTokens)."""
+    return min(int(0.8 * RESERVE_TOKENS), MODEL_MAX_TOKENS)
 
 
 # ============================================================
@@ -96,6 +101,47 @@ def serialize_conversation(messages):
             if content:
                 parts.append(f"[Tool result]: {content[:2000]}")
     return "\n\n".join(parts)
+
+
+def extract_file_ops(messages):
+    """Extract file operations from assistant tool calls (matching Pi's extractFileOpsFromMessage)."""
+    read_files = []
+    modified_files = []
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "toolCall":
+                continue
+            name = block.get("name", "")
+            args = block.get("arguments", {})
+            if not args:
+                continue
+            path = args.get("path", "")
+            if not path:
+                continue
+            if name == "read":
+                if path not in read_files:
+                    read_files.append(path)
+            elif name in ("write", "edit"):
+                if path not in modified_files:
+                    modified_files.append(path)
+    return read_files, modified_files
+
+
+def format_file_operations(read_files, modified_files):
+    """Format file operations exactly like Pi's formatFileOperations."""
+    sections = []
+    if read_files:
+        sections.append(f"<read-files>\n{chr(10).join(read_files)}\n</read-files>")
+    if modified_files:
+        sections.append(f"<modified-files>\n{chr(10).join(modified_files)}\n</modified-files>")
+    if not sections:
+        return ""
+    return "\n\n" + "\n\n".join(sections)
 
 
 # ============================================================
@@ -186,11 +232,13 @@ STRATEGIES = {
 # LLM Call
 # ============================================================
 
-def call_llm(prompt_text):
+def call_llm(prompt_text, max_tokens=None):
+    if max_tokens is None:
+        max_tokens = calc_max_tokens()
     payload = json.dumps({
         "model": MODEL_ID,
         "messages": [{"role": "user", "content": prompt_text}],
-        "max_tokens": MAX_TOKENS,
+        "max_tokens": max_tokens,
     }).encode("utf-8")
     req = urllib.request.Request(MODEL_URL, data=payload, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=180) as resp:
@@ -278,8 +326,13 @@ def run():
             continue
 
         split = int(len(messages) * 0.7)
-        serialized = serialize_conversation(messages[:split])
+        messages_to_compact = messages[:split]
+        serialized = serialize_conversation(messages_to_compact)
         remaining = serialize_conversation(messages[split:])
+
+        # Extract file operations (like Pi does)
+        read_files, modified_files = extract_file_ops(messages_to_compact)
+        file_ops_suffix = format_file_operations(read_files, modified_files)
 
         # Save conversation and remaining for reference
         (sess_out / "conversation.txt").write_text(serialized, encoding="utf-8")
@@ -306,6 +359,9 @@ def run():
 
             try:
                 summary = call_llm(prompt)
+                # Append file operations (like Pi does)
+                if file_ops_suffix:
+                    summary += file_ops_suffix
                 (sess_out / f"summary_{strat}.txt").write_text(summary, encoding="utf-8")
                 sc = score_summary(summary)
                 sc.strategy = strat
