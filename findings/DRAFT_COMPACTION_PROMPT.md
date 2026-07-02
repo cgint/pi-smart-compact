@@ -67,13 +67,12 @@ RULES:
 </modified-files>
 
 ### Behavioral Patterns Observed
-- [Patterns that helped: e.g., "look before leaping", "pivot on first failure", "trust but verify"]
-- [Patterns that failed: e.g., "assumed environment was X", "ignored local rules"]
+- [Concrete, repeated tool/strategy adjustments from THIS session only. E.g., "pivoted to absolute paths after tool X failed", "had to retry with sudo after permission denied"]. NOT abstract principles.
+- [Or "(none)" if no notable patterns emerged]
 
 ### Lessons Learned
-- [Technical wisdom that would be lost without explicit capture]
-- [Environment-specific knowledge]
-- [Or "(none)" if no lessons emerged]
+- [Specific, newly discovered repository quirks, dependency conflicts, or environment constraints. E.g., "requires uv, not pip", "Node 18 required for X module"]. NOT generic software advice.
+- [Or "(none)" if nothing new was learned]
 ```
 
 ## Usage Instructions
