@@ -1,0 +1,732 @@
+You are a session compaction specialist. Your task is to read a conversation between a user and an AI assistant, then produce a structured continuation context that enables another agent to pick up exactly where the work left off.
+
+RULES:
+1. Summarize what was ACTUALLY DISCUSSED and DONE in the conversation — NOT the content of files that were read.
+2. Preserve decisions with their rationale and evidence references.
+3. Preserve unresolved blockers and uncertainty.
+4. Preserve key file operations (read/write/edit) with exact paths.
+5. Preserve the last ~20K tokens of conversation verbatim.
+6. Remove: stale planning chatter, repeated explanations, low-value tool narration.
+7. Do NOT continue the conversation. Do NOT respond to questions. ONLY output the structured summary below.
+8. If the session contains only file reading with no discussion, summarize what was read and the agent's observations — do NOT invent decisions or goals that weren't discussed.
+
+OUTPUT FORMAT:
+
+## What Was Done
+[Brief description of actions taken in this session]
+
+## Key Findings / Observations
+[Any insights discovered during the session]
+
+## Key Decisions
+- **[Decision]**: [Rationale]
+- (or "None" if no decisions were made)
+
+## Current State
+[Where things stand]
+
+## Next Steps
+1. [What should happen next]
+- (or "None" if the session is complete)
+
+## File Operations
+[Files read/written with paths]
+
+## Critical Context
+[Any data, examples, or references needed to continue]
+- (or "None" if not applicable)
+
+Be concise. Use bullet points. Skip sections that are empty.
+
+<conversation>
+[User]: call find . -name "*.md" And read all those Markdown files.
+
+[Assistant]: ...
+
+
+
+[Assistant tool calls]: bash(command="find . -name \"*.md\" | head -50", intent="List all Markdown files in the project", rationale
+</think="<tool_call>\n<function=read>")
+
+[Tool result]: Validation failed for tool "bash":
+  - rationale: must have required properties rationale
+  - root: must not have additional properties
+
+Received arguments:
+{
+  "command": "find . -name \"*.md\" | head -50",
+  "intent": "List all Markdown files in the project",
+  "rationale\n</think": "<tool_call>\n<function=read>"
+}
+
+[Assistant]: ...
+
+
+
+
+[Assistant tool calls]: bash(command="find . -name \"*.md\" | head -50", intent="List all Markdown files in the project", rationale="Need to know which .md files exist before reading them"); bash(command="find . -name \"*.md\" | wc -l", intent="Count total number of .md files", rationale="Check volume before reading")
+
+[Tool result]: ./patterns/handoff-context-brief.md
+./patterns/minimal-progress-capsule.md
+./patterns/evidence-linked-traces.md
+./NORTH-STAR.md
+./agent/compaction_test_prompt.md
+./status/coverage.md
+./README.md
+./findings/DRAFT_COMPACTION_PROMPT.md
+./findings/PI_BUILTIN_COMPACTION_PROMPTS.md
+./findings/06-fixed-approach.md
+./findings/05-extension-compaction-analysis.md
+./findings/04-papers-research.md
+./findings/03-implementation-code-strategies.md
+./findings/02-trace-v2-patterns.md
+./findings/01-pi-compaction-baseline.md
+./findings/CONSOLIDATED_FINDINGS.md
+./concepts/context-pointers.md
+./concepts/compaction-principles.md
+./concepts/budget-and-storage-aware-compaction.md
+./sources/research-map.md
+./plan.md
+./AGENTS.md
+./initial_session.md
+./HANDOFF.md
+./.pi/goals/archived/goal_2026070212185918_mr3catkm-6l4gcc.md
+
+
+[Tool result]:       25
+
+
+[Assistant]: ...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[Assistant tool calls]: read(path="/Users/cgint/dev-external/pi-smart-compact/NORTH-STAR.md", intent="Read NORTH-STAR document", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/README.md", intent="Read README", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/plan.md", intent="Read plan document", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/HANDOFF.md", intent="Read HANDOFF document", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/initial_session.md", intent="Read initial session notes", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/sources/research-map.md", intent="Read research map", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/CONSOLIDATED_FINDINGS.md", intent="Read consolidated findings", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/01-pi-compaction-baseline.md", intent="Read Pi compaction baseline findings", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/02-trace-v2-patterns.md", intent="Read trace v2 patterns", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/03-implementation-code-strategies.md", intent="Read implementation strategies", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/04-papers-research.md", intent="Read papers and research findings", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/05-extension-compaction-analysis.md", intent="Read extension compaction analysis", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/06-fixed-approach.md", intent="Read fixed approach findings", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/PI_BUILTIN_COMPACTION_PROMPTS.md", intent="Read Pi builtin compaction prompts", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/findings/DRAFT_COMPACTION_PROMPT.md", intent="Read draft compaction prompt", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/concepts/context-pointers.md", intent="Read context pointers concept", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/concepts/compaction-principles.md", intent="Read compaction principles", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/concepts/budget-and-storage-aware-compaction.md", intent="Read budget and storage aware compaction", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/agent/compaction_test_prompt.md", intent="Read compaction test prompt", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/status/coverage.md", intent="Read coverage status", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/patterns/evidence-linked-traces.md", intent="Read evidence linked traces pattern", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/patterns/minimal-progress-capsule.md", intent="Read minimal progress capsule pattern", rationale="User asked to read all .md files"); read(path="/Users/cgint/dev-external/pi-smart-compact/patterns/handoff-context-brief.md", intent="Read handoff context brief pattern", rationale="User asked to read all .md files")
+
+[Tool result]: # pi-smart-compact North Star
+
+## Status
+
+This document is the guiding intent for `pi-smart-compact`. It corrects the goal hierarchy: the first and most important milestone is a smarter **prompt-only compaction mechanism** for Pi sessions, not a side-storage or lookup system.
+
+## Main objective
+
+Use the knowledge already present in the local Pi-related repositories, decision-context repositories, and relevant papers to design a compaction approach that is better than Pi’s built-in compaction.
+
+The desired first result is a compaction prompt or prompt strategy that can transform an overloaded agentic session into a very small but highly informative continuation context.
+
+The compacted output should aim for:
+
+- minimum characters with maximum information;
+- preservation of the bigger-picture objective;
+- preservation of the current phase or sub-part of that bigger picture;
+- enough current-state detail for the agent to continue intelligently;
+- low noise and low irritation from stale or unnecessary session history;
+- clear orientation about what matters now, what was already decided, and what should happen next.
+
+## First milestone: prompt-only smart compaction
+
+The first milestone is to create a better compaction mechanism using **one prompt**.
+
+That prompt should contain the distilled knowledge, strategies, and design lessons derived from existing code, repositories, notes, and papers. It should guide the model to produce a compacted context that is smarter than a generic summary.
+
+Important constraint for this milestone:
+
+- Do **not** rely on storing additional snippets, side files, lookup tables, or external retrieval created during compaction.
+- The compaction output itself must carry the essential continuation context.
+- The prompt can use the research and strategy captured in this repository, but the runtime compaction act should initially be a direct prompt-based transformation.
+
+This milestone may be sufficient by itself. If prompt-only compaction works well 
+
+[Tool result]: # pi-smart-compact
+
+Pi extension that replaces Pi's built-in compaction with a prompt-only mechanism designed to produce minimal, high-signal continuation context.
+
+## How it works
+
+The extension intercepts Pi's compaction via the `session_before_compact` hook and replaces it with a custom LLM call. The compaction prompt lives in `findings/DRAFT_COMPACTION_PROMPT.md` — edit that file to change behavior. No code changes needed.
+
+## Installation
+
+```bash
+pipa install -c .
+```
+
+## Usage
+
+No configuration needed. The extension activates automatically when Pi detects a session is approaching the context window limit.
+
+To change the compaction behavior, edit `findings/DRAFT_COMPACTION_PROMPT.md` and reload Pi.
+
+## Architecture
+
+- **`index.ts`** — Extension entry point. Listens for `session_before_compact`, loads the prompt from markdown, calls the LLM, returns the result.
+- **`findings/DRAFT_COMPACTION_PROMPT.md`** — The compaction prompt. This is the only configuration point.
+- **`agent/simulate_compaction.py`** — Standalone test script for iterating on the prompt without running Pi.
+
+## Graceful degradation
+
+If the LLM call fails (network error, API error, model unavailable), the extension falls back to Pi's built-in compaction automatically. No session disruption.
+
+[Tool result]: # Plan — Prompt-Only Compaction Research
+
+## Status
+Draft 2026-07-02. Aligned to NORTH-STAR: prompt-only compaction as first milestone.
+
+## Phased approach
+
+### Phase 1 — Collect (information gathering)
+Gather findings from all sources. No synthesis or drafting yet. Accumulate evidence.
+
+### Phase 2 — Synthesize (combine → draft)
+Combine collected findings into a compaction prompt. Evaluate against NORTH-STAR criteria.
+
+## Phase 1: Research slices
+
+### 1. Baseline: Pi's built-in compaction
+- Find and read Pi's compaction implementation (prompt templates, strategies, limitations).
+- Identify where it succeeds and where it fails (stale content retention, context window waste, loss of decision state).
+- **Finding to capture:** documented baseline of what Pi does now and known failure modes.
+
+### 2. Trace-v2 patterns
+- Read trace-v2 sessions for evidence of: what gets lost, what's preserved, where compaction helps or harms.
+- Look for patterns in representation_metrics.md: span counts, episode boundaries, decision coverage.
+- **Finding to capture:** list of actionable insights that inform what a compaction prompt should preserve/remove.
+
+### 3. Implementation code strategies
+- Search referenced repos for: minimal context packs, session builders, context window management, summarization prompts.
+- Extract prompt patterns, strategies, and design decisions that directly apply to compaction.
+- **Finding to capture:** catalog of compaction strategies with source references.
+
+### 4. Papers
+- Consult papers referenced in sources/research-map.md for context window management, summarization, and agent memory theories.
+- **Finding to capture:** theoretical grounding and specific techniques applicable to prompt-based compaction.
+
+## Phase 2: Synthesize
+- Combine findings from slices 1-4 into a single compaction prompt.
+- Test: run against a real Pi session (if possible) or evaluate against criteria from NORTH-STAR.
+- **Output:** draft compaction prompt + evaluation notes.
+
+## Phas
+
+[Tool result]: # Handoff — pi-smart-compact
+
+## Status
+
+The initial compaction knowledge base is complete and auditor-approved. A new agent can continue from this directory without rereading the whole prior session.
+
+## Start here
+
+1. Read `README.md` for the map.
+2. Read `NORTH-STAR.md` for the original user intent.
+3. Read `status/coverage.md` for what is covered, partial, and intentionally not exhaustive.
+4. Use `sources/research-map.md` to jump back to exact source documents.
+
+## Current artifact map
+
+- `README.md` — navigation and core thesis.
+- `NORTH-STAR.md` — user briefing and guiding objective.
+- `sources/research-map.md` — inspected source inventory and synthesis targets.
+- `concepts/compaction-principles.md` — smart compaction rules and failure modes.
+- `concepts/context-pointers.md` — externalized-detail/context-pointer strategy.
+- `concepts/budget-and-storage-aware-compaction.md` — token/cost/session-storage implications.
+- `patterns/minimal-progress-capsule.md` — compact continuity capsule.
+- `patterns/evidence-linked-traces.md` — fact/inference/evidence split for reviewable compaction.
+- `patterns/handoff-context-brief.md` — compact handoff pattern for agent/subagent continuation.
+- `status/coverage.md` — coverage, gaps, and next research slices.
+
+## Key design thesis
+
+Smart compaction is not merely shortening text. It is a representation discipline: keep the smallest active state that supports the next reliable decision, and externalize lower-priority detail behind precise file pointers.
+
+## Best next research slices
+
+Recommended order:
+
+1. Inspect `../../decision-context-traces/data/trace-v2/README.md` and representative `representation_metrics.md` artifacts for exact compaction/reviewability metrics.
+2. Inspect implementation code for minimal context packs, trace schemas, and Pi session builders if moving from concept notes toward executable compaction.
+3. Inspect coordinator playground run records directly if measured handoff compaction becomes central.
+4. Read
+
+[Tool result]: # PI session (conversation) — 2026-07-02T08-33-46-261Z_019f21f6-6f15-7838-b2ec-68056c8730b1.jsonl
+
+- id: `019f21f6-6f15-7838-b2ec-68056c8730b1`
+- started: `2026-07-02T08:33:46.261000+00:00`
+- cwd: `/Users/cgint/dev/concepts/pi-smart-compact`
+- source: `/Users/cgint/.pi/profiles/partner/agent/sessions/--Users-cgint-dev-concepts-pi-smart-compact--/2026-07-02T08-33-46-261Z_019f21f6-6f15-7838-b2ec-68056c8730b1.jsonl`
+- mode: `all`
+- thinking: `details`
+- group_turns: `on`
+
+---
+
+### USER
+
+<skill name="critical-constructive-partner" location="/Users/cgint/.pi/profiles/partner/agent/skills/critical-constructive-partner/SKILL.md">
+References are relative to /Users/cgint/.pi/profiles/partner/agent/skills/critical-constructive-partner.
+
+# Role: Critical-Constructive Partner
+
+## 1. Identity & Scope
+You are an eye-level collaboration partner. Your purpose is to eliminate "skill hell" and "vibe coding" by executing tasks through strict architectural constraints, low context load, and predictable execution loops.
+
+## 2. Behavioral Rules
+- **Constructive Friction:** Reject mindless agreement. Push back immediately if user assumptions are weak, goals are ambiguous, or code complexity is unnecessary. For every critique, you MUST provide 1–2 actionable alternatives.
+- **Hiding the Future (Maximize Leg Work):** Do not look ahead to final goals or sequential steps during discovery phases. Focus 100% of your current compute on the immediate step. If the user asks for a plan or deep analysis, execute the interrogation/discovery step completely before generating the final asset.
+- **Uncertainty Calibration:** Never hallucinate or guess to appear competent. If data is unverified or outside your current context scope, explicitly label it: "Hypothesis: [text]" or "Unverified: [text]".
+
+## 3. Output Constraints & Protocol
+- **Leading Words (Leitwort):** Pack high-density meaning into precise domain-specific phrases (e.g., "vertical slice", "tracer bullet", "context pointer"). Repeat these lea
+
+[Tool result]: # Research map
+
+## Status
+
+Initial source map for compaction-relevant material. Coverage is intentionally focused: it records what was inspected and what was extracted, not a full repository inventory.
+
+## Coverage table
+
+| Source | Status | Key concepts extracted | Target notes |
+|---|---|---|---|
+| `../../pi-sessions-replace-driver/AGENTS.md` | Covered initial | Driver-copilot north star; minimal high-signal interventions; durable file-based memory; context as control flow, files as knowledge store. | `../concepts/compaction-principles.md`, `../patterns/minimal-progress-capsule.md` |
+| `../../pi-sessions-replace-driver/work/session-signal-system.md` | Covered initial | JSONL session watching; compact contract checking; async verifier cadence; six verifier angles; `minimal_progress_context`; artifact-rich/out-of-band detail with tiny in-band interventions. | `../patterns/minimal-progress-capsule.md`, `../concepts/context-pointers.md` |
+| `../../pi-self-reflect/docs/steering-feedback-tree-check.md` | Covered initial | Pi `/tree` as prior art; branch summaries; context rebuild; out-of-band reflection; avoid polluting active session leaf; sidecar session isolation. | `../concepts/context-pointers.md`, `../concepts/compaction-principles.md` |
+| `../../pi-supervisor-guide/SCENARIO_NOTES.md` | Covered initial | Observable event traces; compact judge input; evidence IDs; heuristic caveats; assistant-message previews; facts separate from findings. | `../patterns/evidence-linked-traces.md` |
+| `../../decision-context-traces/CURRENT_STATE.md` | Covered initial | ContextTrace/Physics vs DecisionTrace/Cognition; representation before optimization; minimal context packs; pattern lift; compaction metrics; held-out evaluation. | `../concepts/compaction-principles.md`, `../patterns/evidence-linked-traces.md` |
+| `../../decision-context-traces/agent/docs-papers-map.md` | Covered initial | Papers/docs synthesis; representation layer; risks: hallucinated rationale, proxy hacking, pre
+
+[Tool result]: # Consolidated Findings — Compaction Strategy
+
+Derived from: 01-pi-compaction-baseline.md, 02-trace-v2-patterns.md, 03-implementation-code-strategies.md, 04-papers-research.md
+
+---
+
+## What to PRESERVE (keep in compaction output)
+
+### P1: Structured sections with explicit categories
+Pi's template (Goal, Constraints, Progress, Decisions, Next Steps, Critical Context) forces organization. Better compaction should use a similar but more flexible structure.
+*(Sources: compaction.js SUMMARIZATION_PROMPT, derive_minimal_context_packs.py PACK_CONTEXT_RULES, papers-map Critical interpretation)*
+
+### P2: Evidence-linked decisions
+Every preserved decision should have: intent, rationale, evidence refs, confidence. 96.4% of messages in trace-v2 have rationale present — this is the signal to preserve.
+*(Sources: trace-v2 README.md, representation_metrics.md, docs-papers-map Provenance is crucial)*
+
+### P3: Incremental merge capability
+Previous summaries should be merged (not replaced) across compaction cycles. Prevents information loss over multiple compactions.
+*(Sources: compaction.js UPDATE_SUMMARIZATION_PROMPT, ACE paper 2510.04618)*
+
+### P4: File operations as separate section
+Read/write/edit files should be tracked separately from narrative summary. Clean separation of concerns.
+*(Sources: compaction.js formatFileOperations(), derive_minimal_context_packs.py render_minimal_pack)*
+
+### P5: Recent context kept intact
+Last ~20K tokens of conversation should always be preserved verbatim. Only older history is summarized.
+*(Sources: compaction.js DEFAULT_COMPACTION_SETTINGS keepRecentTokens=20000)*
+
+### P6: Session-type awareness
+Compaction should adapt to session type (debugging, feature dev, research, deployment). Different sessions prioritize different information.
+*(Sources: papers-map Information-Centric Architecture, derive_minimal_context_packs.py tool-specific rendering)*
+
+### P7: Learned behavioral patterns
+Holistic context gathering ("look before leaping"), environmen
+
+[Tool result]: # Findings: Pi's Built-in Compaction (Baseline)
+
+Source: `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/` (installed package v0.80.3)
+
+---
+
+## Compaction Architecture
+
+### Trigger condition
+- Compaction triggers when: `contextTokens > contextWindow - reserveTokens`
+- Default settings: `reserveTokens: 16384`, `keepRecentTokens: 20000`
+- Two trigger modes: manual (`compact()`) and auto (`checkAndMaybeCompact()`)
+- Auto-compaction handles: context overflow recovery (retry after compact) and threshold-based (no auto-retry)
+
+### Cut point algorithm
+- Walks backwards from newest entry, accumulating estimated message sizes
+- Stops when accumulated tokens >= `keepRecentTokens`
+- Cuts at valid message boundaries (user, assistant, custom, bashExecution) — NEVER at tool results
+- Supports split turns: if cutting mid-turn, generates a separate "turn prefix" summary
+
+### Summary generation
+- Uses LLM to generate a structured summary of discarded history
+- Two prompts: initial (`SUMMARIZATION_PROMPT`) and incremental (`UPDATE_SUMMARIZATION_PROMPT`)
+- Conversation serialized to plain text with `[User]:`, `[Assistant]:`, `[Assistant thinking]:`, `[Assistant tool calls]:`, `[Tool result]:` markers
+- Tool results truncated to 2000 chars for summarization
+- File operations (read/write/edit) extracted and appended as XML tags
+
+### Output format
+- Summary follows a fixed template: Goal, Constraints & Preferences, Progress (Done/In Progress/Blocked), Key Decisions, Next Steps, Critical Context
+- File operations appended as `<read-files>` and `<modified-files>` XML blocks
+- Previous summary preserved and merged (incremental mode)
+
+---
+
+## Findings
+
+### F1: Preserve
+**"Compaction preserves exact file paths, function names, and error messages"** — the prompt explicitly instructs the model to preserve these. The code also extracts file operations (read/write/edit) as XML tags.
+*(Source: `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist
+
+[Tool result]: # Findings: Trace-v2 Patterns
+
+Source: `/Users/cgint/dev/decision-context-traces/data/trace-v2/gemini/` (sessions: dep-mgmt, ui-debug, remote-ssh, tech-sync, web-research, etc.)
+
+---
+
+## Architecture Overview
+
+trace-v2 produces two parallel representations:
+- **ContextTrace ("Physics")**: observable events from the raw session log — what happened
+- **DecisionTrace ("Cognition")**: LLM-extracted decision signals — why it happened
+
+Episodes = spans between user messages. Decision spans = multi-turn decision clusters.
+
+---
+
+## Findings
+
+### F1: Preserve
+**"Decision traces preserve intent, rationale, and evidence links per message"** — every AI message gets extracted intent, rationale, confidence, and evidence_event_indices pointing back to the raw log. This is a rich signal for compaction: the "why" is preserved alongside the "what".
+*(Source: `/Users/cgint/dev/decision-context-traces/data/trace-v2/README.md` — decision_trace.json spec)*
+
+### F2: Preserve
+**"Evidence-backed decisions are high-confidence"** — 96.4% of messages in dep-mgmt session have rationale present, 96.4% have evidence refs. High rationale/evidence coverage means compaction can safely preserve evidence-backed decisions over un-backed ones.
+*(Source: `/Users/cgint/dev/decision-context-traces/data/trace-v2/gemini/session-dep-mgmt/representation_metrics.md`)*
+
+### F3: Preserve
+**"Episodes provide natural compaction boundaries"** — each episode starts at a user message and spans until the next user message. This gives a principled way to segment sessions for compaction: summarize within episodes, preserve inter-episode transitions.
+*(Source: `/Users/cgint/dev/decision-context-traces/data/trace-v2/README.md` — episode_trace.json)*
+
+### F4: Preserve
+**"Decision spans group multi-turn decisions"** — 56 events in dep-mgmt compress to 19 decision spans (2.11 spans/episode). This shows compaction is achievable: 56 events → 19 spans = 66% reduction while preserving decision structure.
+*(Source: `/Users/cgint/d
+
+[Tool result]: # Findings: Implementation Code Strategies
+
+Sources:
+- `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/` (Pi's built-in compaction)
+- `/Users/cgint/dev/decision-context-agent/derive_minimal_context_packs.py` (DSPy minimal context packs)
+- `/Users/cgint/dev/decision-context-traces/synthesize_patterns.py` (pattern synthesis)
+
+---
+
+## Pi's Built-in Compaction (from Slice 1 baseline)
+
+### F1: Preserve
+**"Structured summary template with explicit sections" (Goal, Constraints, Progress, Decisions, Next Steps, Critical Context)** — the template forces the model to organize information, not just dump text. A better compaction prompt should use a similar but more flexible structure.
+*(Source: `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js` — `SUMMARIZATION_PROMPT`)*
+
+### F2: Preserve
+**"Incremental compaction preserves previous summaries"** — when compaction runs again, the previous summary is merged (not replaced). This prevents information loss across multiple compaction cycles.
+*(Source: same — `UPDATE_SUMMARIZATION_PROMPT`, `generateSummary()` accepts `previousSummary`)*
+
+### F3: Preserve
+**"File operations are extracted and appended as XML tags"** — read/write/edit files are tracked separately from the narrative summary. This is a clean separation of concerns.
+*(Source: `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/utils.js` — `formatFileOperations()`)*
+
+### F4: Remove
+**"Tool results truncated to 2000 chars before summarization"** — tool outputs are heavily truncated, then the truncated version is summarized. Original content is lost.
+*(Source: same — `TOOL_RESULT_MAX_CHARS = 2000`, `serializeConversation()`)*
+
+### F5: Improve
+**"Generic system prompt provides no strategy"** — "You are a context summarization assistant" gives the model no compaction strategy, no prioritization guidance, no awareness of what matters in an agentic session.
+*(Sou
+
+[Tool result]: # Findings: Papers & Research
+
+Sources:
+- `/Users/cgint/dev/decision-context-traces/papers/` (PDFs and text extracts)
+- `/Users/cgint/dev/decision-context-traces/agent/docs-papers-map.md` (paper summaries)
+- ArXiv: 2510.04618 (ACE — Agentic Context Engineering)
+- ArXiv: 2511.18423 (GAM — General Agentic Memory)
+- ArXiv: 2506.02009 (STRATUS/TNR — Transactional No-Regression)
+- ArXiv: 2512.05765 (UCCT — Coordination Physics)
+- `/Users/cgint/dev/decision-context-agent/docs/claude-code-learnings-prompt-caching.pdf`
+
+---
+
+## ACE — Agentic Context Engineering (2510.04618)
+
+### F1: Preserve
+**"Contexts should be evolving playbooks, not one-shot summaries"** — ACE treats contexts as accumulating artifacts that grow through generation, reflection, and curation. This supports the two-stage compaction approach: extract → refine → curate, rather than single-pass summarization.
+*(Source: ArXiv 2510.04618 abstract — "contexts as evolving playbooks that accumulate, refine, and organize strategies through a modular process of generation, reflection, and curation")*
+
+### F2: Preserve
+**"Structured, incremental updates prevent context collapse"** — Iterative rewriting erodes details over time (context collapse). ACE prevents this by using structured, incremental updates that preserve detailed knowledge. A compaction prompt should use structured sections with incremental merge capability, not free-text rewrites.
+*(Source: same — "prevents collapse with structured, incremental updates that preserve detailed knowledge")*
+
+### F3: Preserve
+**"Natural execution feedback enables self-improvement without labeled supervision"** — ACE adapts effectively using execution feedback alone, not requiring labeled training data. A compaction prompt could benefit from feedback loops: if a resumed agent fails, that failure should inform future compaction.
+*(Source: same — "adapt effectively without labeled supervision and instead by leveraging natural execution feedback")*
+
+### F4: Improve
+**"Brevity b
+
+[Tool result]: # 05 — Extension Compaction Investigation
+
+## Executive Summary
+
+**Conclusion:** Pi's compaction pipeline is **not injectable from extensions** in a way that allows custom prompt templates. The `session_before_compact` hook fires, but extensions cannot independently call the LLM to generate a custom summary because Pi's auth layer (`modelRegistry`) is inaccessible from extension context.
+
+The MVP prompt (`DRAFT_COMPACTION_PROMPT.md`) is complete and tested via simulation, but has never been validated against a live session because the extension mechanism to deliver it does not work.
+
+---
+
+## Timeline of Attempts
+
+### Attempt 1: `session_before_compact` → `completeSimple()` (original approach)
+
+**Idea:** Intercept compaction, serialize messages, call `completeSimple(model, ...)` with our prompt, return the summary in `result.compaction`.
+
+**Failure:** `currentModel` was always `null`.
+
+**Root cause:** Pi's extension API does not expose the current model. The `model_select` event only fires when the user *changes* models. A session already running with a model never fires it. The `/compact` command aborts the agent turn before any LLM call, so `before_provider_request` never fires either.
+
+**Investigation:** Examined Pi's `agent-session.js` — `compact()` has `this.model` (from `this.agent.state.model`) but the `SessionBeforeCompactEvent` does not include it. The model is passed to `compact()` internally but never exposed to extensions.
+
+### Attempt 2: Resolve model from session entries + models.json
+
+**Idea:** Read the session's `branchEntries` to find the last assistant message's `provider` and `model` fields, then look up the model definition from `models.json` and construct a `Model` object.
+
+**Partial success:** Successfully resolved model (`8001-sparky / qwen36-35b-nvidia-nvfp4`) and constructed a `Model` object.
+
+**Failure:** `completeSimple()` threw `"No API key for provider: 8001-sparky"`. Pi's auth layer (`modelRegistry.getApiKeyAndHeaders()`) is inaccessible
+
+[Tool result]: # 06 — Fixed Approach: `session_before_compact` with `ctx.modelRegistry`
+
+## Date
+2026-07-02
+
+## Problem
+
+All previous approaches failed because they tried to work around Pi's auth layer:
+- `completeSimple()` with an externally-constructed model → auth failure
+- `before_provider_request` prompt-swapping → doesn't fire during auto-compaction, and fails silently with `-e ./`
+
+## Solution
+
+Use `session_before_compact` with `ctx.modelRegistry` — the same pattern as Pi's official example (`custom-compaction.ts`).
+
+### Why this works
+
+Pi's extension runtime binds `ctx.modelRegistry` at startup via `runner.bindCore()`. The registry resolves API keys from the user's `models.json` configuration. By using `ctx.modelRegistry` instead of trying to derive auth ourselves, we leverage Pi's built-in auth resolution.
+
+### Source evidence
+
+Verified against Pi v0.80.3 source:
+
+1. **`ctx.model`** → `getModel: () => this.model` (agent-session.js line ~bindCore)
+   - Resolved at call time, returns the session's current model
+
+2. **`ctx.modelRegistry`** → lazily resolved via getter in `createContext()` (runner.js)
+   - Available in all event handlers
+
+3. **`modelRegistry.getApiKeyAndHeaders(model)`** → returns `{ ok: true, apiKey?, headers?, env? }` (model-registry.d.ts)
+   - Resolves auth from models.json, including env vars and command-backed keys
+
+4. **`complete(model, { messages }, { apiKey, headers, env, maxTokens, signal })`** (pi-ai/compat.d.ts)
+   - Standard LLM call function, accepts resolved auth
+
+5. **Return shape** → `SessionBeforeCompactResult` accepts `{ compaction?: CompactionResult }` (types.d.ts)
+   - `CompactionResult` = `{ summary, firstKeptEntryId, tokensBefore, estimatedTokensAfter?, details? }`
+
+6. **Event fires** → both manual `/compact` and auto-compaction (agent-session.js)
+   - `reason` field: `"manual" | "threshold" | "overflow"`
+
+### Implementation plan
+
+1. Listen to `session_before_compact` with `(event, ctx)` signature
+2. Get model from `ctx.model` (session's
+
+[Tool result]: # Pi's Built-in Compaction Prompts (Reference)
+
+Source: `/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/compaction.js`
+
+---
+
+## System Prompt
+
+```javascript
+export const SUMMARIZATION_SYSTEM_PROMPT = `You are a context summarization assistant. Your task is to read a conversation between a user and an AI assistant, then produce a structured summary following the exact format specified.
+
+Do NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`;
+```
+
+---
+
+## Initial Summarization Prompt
+
+```javascript
+const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+```
+
+---
+
+## Incremental Update Prompt (used when a previous summary exists)
+
+```javascript
+const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+Update the existing structured summary with new information. RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress sectio
+
+[Tool result]: # Draft Compaction Prompt
+
+## Purpose
+Transform an overloaded agentic session into a small but highly informative continuation context that preserves the bigger-picture objective, current phase, decisions, blockers, evidence, and next steps — while removing stale chatter, repeated explanations, and low-value narration.
+
+## System Prompt
+
+```
+You are a session compaction specialist. Your task is to read a conversation between a user and an AI assistant, then produce a structured continuation context that enables another agent to pick up exactly where the work left off.
+
+RULES:
+1. Preserve the bigger-picture objective and the current work phase.
+2. Preserve decisions with their rationale and evidence references.
+3. Preserve unresolved blockers and uncertainty.
+4. Preserve key file operations (read/write/edit) with exact paths.
+5. Preserve the last ~20K tokens of conversation verbatim (do not summarize recent work).
+6. Remove: stale planning chatter, repeated explanations, low-value tool narration, details that no longer influence the next decision, outdated hypotheses, redundant summaries.
+7. Do NOT continue the conversation. Do NOT respond to questions. ONLY output the structured summary below.
+```
+
+## Output Format
+
+```
+## Session Context
+
+### Big Picture
+[What is the overarching goal? If the goal shifted during the session, note the evolution.]
+
+### Work Stream Evolution
+[How the session's active focus has migrated over time. E.g., "Goal initiated as X, transitioned to Y at step N due to error Z, currently active on W." Record the sequence of shifts, not just the current state. This preserves the full trajectory, not just a snapshot.]
+
+### Constraints & Preferences
+- [Any constraints, preferences, or requirements from the user]
+- [Local project rules that override general defaults]
+- [Or "(none)" if none]
+
+### Progress
+#### Completed
+- [x] [Completed tasks/changes with exact file paths]
+
+#### In Progress
+- [ ] [Current work — what is actively being worked on?]
+
+###
+
+[Tool result]: # Context pointers and externalized detail
+
+## Status
+
+Initial strategy note for compaction outputs that keep active context small while making omitted detail retrievable.
+
+## Concept
+
+A **context pointer** is a compact reference from active context to a richer artifact on disk.
+
+Instead of carrying long explanations, examples, or raw traces in the active LLM window, the compacted context keeps a short pointer such as:
+
+```text
+Detail: see pi-smart-compact/patterns/evidence-linked-traces.md#compact-trace-shape
+Source: ../../pi-supervisor-guide/SCENARIO_NOTES.md#simple-judge-prototype-update--2026-05-17-162053-cest
+```
+
+The pointer should be specific enough that a future agent can fetch the detail with one targeted read.
+
+## Priority split
+
+| Priority | Keep inline? | Treatment |
+|---|---:|---|
+| Current objective and active subtask | Yes | Inline in compact context. |
+| Binding constraints and blocker rules | Yes | Inline; do not bury. |
+| Next needed action | Yes | Inline and unambiguous. |
+| Key open uncertainty | Usually | Inline if it changes next action; otherwise pointer. |
+| Evidence detail | No, unless essential | Store in file and reference exact path/section. |
+| Historical rationale | Usually no | Externalize; keep only decision-relevant residue. |
+| Examples and edge cases | No | Externalize with pointer. |
+| Raw transcripts/traces | No | Externalize; compact context should refer to trace IDs or file paths. |
+
+## Pointer requirements
+
+A good context pointer should include:
+
+- stable relative path;
+- section heading, symbol, event ID, or artifact name;
+- short reason the pointer matters;
+- whether the detail is evidence, example, caveat, or unresolved background.
+
+Bad pointer:
+
+```text
+See the old notes.
+```
+
+Good pointer:
+
+```text
+Caveat: verification heuristics can misclassify direct execution commands; see ../../pi-supervisor-guide/SCENARIO_NOTES.md#finding-2--verification-detection-is-too-literal.
+```
+
+## Compacted-context pattern
+
+A compacted agent c
+</conversation>
+
