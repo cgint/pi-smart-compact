@@ -1,51 +1,55 @@
 ## What Was Done
-The session involved an automated scan of all Markdown files within the `pi-smart-compact` project directory to establish a comprehensive knowledge base for compaction. The agent read 26 files, including research findings, architectural plans, implementation drafts, and historical session logs. This allowed the agent to understand the project's current status, the "North Star" goal (prompt-only compaction), and the technical hurdles encountered with Pi's extension API.
+Conducted comprehensive research and synthesis to design a "prompt-only" compaction mechanism for Pi sessions, aiming to replace Pi's built-in summarization with a higher-signal, structured output.
+- Gathered baseline data on Pi's existing `compaction.js` implementation (triggers, cut points, prompt structures).
+- Analyzed trace-v2 session logs to identify preservation priorities (decisions with rationale, evidence links, episode boundaries).
+- Reviewed academic literature (ACE, GAM, STRATUS) for context engineering best practices (evolving playbooks, incremental updates).
+- Investigated technical feasibility of implementing a custom compaction extension, specifically focusing on accessing the LLM model and authentication context within Pi's extension hooks.
 
 ## Key Findings / Observations
-- **Project Goal**: The primary objective is to replace Pi's built-in compaction with a custom prompt-only mechanism that produces minimal, high-signal continuation context without relying on external storage or side-car files during runtime.
-- **Technical Blocker**: Direct extension-based compaction failed in earlier attempts because Pi's extension API did not expose the current model or allow independent LLM calls due to auth layer restrictions (`modelRegistry` inaccessibility).
-- **Resolved Solution**: A working approach was identified using `session_before_compact` combined with `ctx.modelRegistry` to resolve API keys and make authenticated LLM calls.
-- **Research Consensus**: Effective compaction requires preserving structured decisions with rationales, evidence links, and file operations, while discarding stale narration and truncating tool results.
-- **Draft Prompt Ready**: A `DRAFT_COMPACTION_PROMPT.md` has been synthesized based on these findings, though it lacks validation against a live session due to the previously mentioned integration blocker.
+- **Pi Baseline Limitations**: Pi's default compaction uses a generic system prompt ("You are a context summarization assistant"), truncates tool results to 2000 chars, and lacks strategic prioritization guidance.
+- **Preservation Priorities**: High-value compaction must preserve: structured sections (Goal, Decisions, Next Steps), evidence-linked decisions (96.4% of trace-v2 messages have rationale), file operations, and the last ~20K tokens verbatim.
+- **Extension Auth Barrier**: Initial attempts to call the LLM via `completeSimple()` failed because `currentModel` is null during auto-compaction and `modelRegistry` auth is inaccessible in standard extension contexts.
+- **Viable Path Identified**: The `session_before_compact` hook combined with `ctx.modelRegistry` (available via `runner.bindCore`) allows resolving API keys and calling the LLM correctly, matching Pi's internal extension patterns.
+- **North Star Alignment**: The primary goal is a single-prompt solution that outputs a dense, structured continuation context without relying on external side-car files or lookup tables at runtime.
 
 ## Key Decisions
-- **[Adopt Prompt-Only Milestone]**: The first milestone focuses exclusively on improving the compaction prompt strategy rather than building complex side-storage systems, as per the NORTH-STAR directive.
-- **[Use `ctx.modelRegistry` for Auth]**: Determined that accessing `ctx.modelRegistry` within the `session_before_compact` hook is the viable path to resolve API keys and perform LLM calls, overriding previous failed attempts to bypass the auth layer.
-- **[Preserve Structured Decisions over Raw History]**: Based on trace-v2 analysis, decisions must be preserved with intent, rationale, and evidence, rather than just summarizing raw conversation text.
+- **[Approach: Prompt-Only First Milestone]**: The initial deliverable is a refined compaction prompt (`DRAFT_COMPACTION_PROMPT.md`) rather than complex side-storage mechanisms. Rationale: Simpler to implement and validate; aligns with the primary goal of improving signal-to-noise ratio.
+- **[Implementation: Use `ctx.modelRegistry`](https://github.com/...])**: To bypass auth issues, the extension must use `ctx.modelRegistry` to resolve credentials for the current session model, rather than attempting to derive them manually. Rationale: Verified against Pi v0.80.3 source; this is the only working method to access authenticated LLM calls within the compaction hook.
+- **[Content Strategy: Evidence-Linked Decisions]**: The compaction prompt must enforce a structure where decisions are paired with rationale and evidence references. Rationale: Trace-v2 analysis shows this is the highest-value signal for agent continuity.
 
 ## Current State
-The project has a complete set of research findings, a drafted compaction prompt, and a understood solution for the extension authentication issue. However, the extension code itself appears incomplete or unvalidated against a live session because the integration mechanism was historically broken. The agent now possesses full context to proceed with implementing or testing the fix.
+- **Research Complete**: All four research slices (Baseline, Trace-v2, Implementation, Papers) are synthesized into `findings/CONSOLIDATED_FINDINGS.md`.
+- **Draft Artifact Created**: A structured compaction prompt has been drafted in `findings/DRAFT_COMPACTION_PROMPT.md` based on the consolidated findings.
+- **Technical Blocker Resolved**: The authentication issue preventing extension usage has been solved via `ctx.modelRegistry`. The implementation plan for the extension is defined in `findings/06-fixed-approach.md`.
+- **Status**: Ready for implementation of the TypeScript extension and validation of the draft prompt against live sessions.
 
 ## Next Steps
-1. Implement the `session_before_compact` hook using `ctx.modelRegistry` to enable authenticated LLM calls.
-2. Integrate the `DRAFT_COMPACTION_PROMPT.md` into the extension logic.
-3. Validate the compaction output against a live Pi session to ensure it meets the "minimal but highly informative" criteria.
+1. Implement the Pi extension in `index.ts` using the `session_before_compact` hook and `ctx.modelRegistry` as detailed in `findings/06-fixed-approach.md`.
+2. Load the content of `findings/DRAFT_COMPACTION_PROMPT.md` dynamically within the extension to allow hot-reloading of prompt behavior.
+3. Validate the new compaction output against a live Pi session, comparing it against the baseline Pi summary to ensure improved signal preservation.
+4. Refine the prompt based on validation results, potentially iterating on the "Work Stream Evolution" section if trajectory tracking proves noisy.
 
 ## File Operations
-[Files read: `./patterns/handoff-context-brief.md`, `./patterns/minimal-progress-capsule.md`, `./patterns/evidence-linked-traces.md`, `./NORTH-STAR.md`, `./agent/compaction_test_prompt.md`, `./status/coverage.md`, `./README.md`, `./findings/DRAFT_COMPACTION_PROMPT.md`, `./findings/PI_BUILTIN_COMPACTION_PROMPTS.md`, `./findings/06-fixed-approach.md`, `./findings/05-extension-compaction-analysis.md`, `./findings/04-papers-research.md`, `./findings/03-implementation-code-strategies.md`, `./findings/02-trace-v2-patterns.md`, `./findings/01-pi-compaction-baseline.md`, `./findings/CONSOLIDATED_FINDINGS.md`, `./concepts/context-pointers.md`, `./concepts/compaction-principles.md`, `./concepts/budget-and-storage-aware-compaction.md`, `./sources/research-map.md`, `./plan.md`, `./AGENTS.md`, `./initial_session.md`, `./HANDOFF.md`, `./.pi/goals/archived/goal_2026070212185918_mr3catkm-6l4gcc.md`]
-
-<read-files>
-/Users/cgint/dev-external/pi-smart-compact/NORTH-STAR.md
-/Users/cgint/dev-external/pi-smart-compact/README.md
-/Users/cgint/dev-external/pi-smart-compact/plan.md
-/Users/cgint/dev-external/pi-smart-compact/HANDOFF.md
-/Users/cgint/dev-external/pi-smart-compact/initial_session.md
-/Users/cgint/dev-external/pi-smart-compact/sources/research-map.md
-/Users/cgint/dev-external/pi-smart-compact/findings/CONSOLIDATED_FINDINGS.md
-/Users/cgint/dev-external/pi-smart-compact/findings/01-pi-compaction-baseline.md
-/Users/cgint/dev-external/pi-smart-compact/findings/02-trace-v2-patterns.md
-/Users/cgint/dev-external/pi-smart-compact/findings/03-implementation-code-strategies.md
-/Users/cgint/dev-external/pi-smart-compact/findings/04-papers-research.md
-/Users/cgint/dev-external/pi-smart-compact/findings/05-extension-compaction-analysis.md
-/Users/cgint/dev-external/pi-smart-compact/findings/06-fixed-approach.md
-/Users/cgint/dev-external/pi-smart-compact/findings/PI_BUILTIN_COMPACTION_PROMPTS.md
-/Users/cgint/dev-external/pi-smart-compact/findings/DRAFT_COMPACTION_PROMPT.md
-/Users/cgint/dev-external/pi-smart-compact/concepts/context-pointers.md
-/Users/cgint/dev-external/pi-smart-compact/concepts/compaction-principles.md
-/Users/cgint/dev-external/pi-smart-compact/concepts/budget-and-storage-aware-compaction.md
-/Users/cgint/dev-external/pi-smart-compact/agent/compaction_test_prompt.md
-/Users/cgint/dev-external/pi-smart-compact/status/coverage.md
-/Users/cgint/dev-external/pi-smart-compact/patterns/evidence-linked-traces.md
-/Users/cgint/dev-external/pi-smart-compact/patterns/minimal-progress-capsule.md
-/Users/cgint/dev-external/pi-smart-compact/patterns/handoff-context-brief.md
-</read-files>
+- **Read**: `./NORTH-STAR.md` (Project intent)
+- **Read**: `./README.md` (Project map)
+- **Read**: `./plan.md` (Phased approach)
+- **Read**: `./findings/DRAFT_COMPACTION_PROMPT.md` (Latest prompt draft)
+- **Read**: `./findings/CONSOLIDATED_FINDINGS.md` (Synthesized research)
+- **Read**: `./findings/01-pi-compaction-baseline.md` (Pi internals analysis)
+- **Read**: `./findings/02-trace-v2-patterns.md` (Trace analysis)
+- **Read**: `./findings/03-implementation-code-strategies.md` (Code strategy)
+- **Read**: `./findings/04-papers-research.md` (Academic research)
+- **Read**: `./findings/05-extension-compaction-analysis.md` (Failed attempt analysis)
+- **Read**: `./findings/06-fixed-approach.md` (Working solution analysis)
+- **Read**: `./concepts/context-pointers.md` (Externalization strategy)
+- **Read**: `./concepts/compaction-principles.md` (General principles)
+- **Read**: `./status/coverage.md` (Coverage map)
+- **Read**: `./sources/research-map.md` (Source inventory)
+- **Read**: `./patterns/handoff-context-brief.md` (Handoff pattern)
+- **Read**: `./patterns/minimal-progress-capsule.md` (Capsule pattern)
+- **Read**: `./patterns/evidence-linked-traces.md` (Trace pattern)
+- **Read**: `./.pi/goals/archived/goal_2026070212185918_mr3catkm-6l4gcc.md` (Archived goal)
+- **Read**: `./agent/compaction_test_prompt.md` (Test prompt)
+- **Read**: `./initial_session.md` (Session start)
+- **Read**: `./HANDOFF.md` (Handoff doc)
+- **Read**: `./concepts/budget-and-storage-aware-compaction.md` (Budget strategy)

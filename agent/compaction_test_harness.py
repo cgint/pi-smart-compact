@@ -222,9 +222,9 @@ def get_minimal_prompt(serialized):
 
 
 STRATEGIES = {
-    "pi": get_pi_prompt,
-    "smart": get_smart_prompt,
-    "minimal": get_minimal_prompt,
+    "pi": {"prompt": get_pi_prompt, "append_file_ops": True},
+    "smart": {"prompt": get_smart_prompt, "append_file_ops": False},
+    "minimal": {"prompt": get_minimal_prompt, "append_file_ops": False},
 }
 
 
@@ -341,8 +341,10 @@ def run():
         sess_results = {}
 
         for strat in strategies:
+            strat_cfg = STRATEGIES[strat]
+            prompt_fn = strat_cfg["prompt"]
+            append_ops = strat_cfg.get("append_file_ops", False)
             print(f"  [{strat}] ", end="")
-            prompt_fn = STRATEGIES[strat]
             prompt = prompt_fn(serialized)
 
             # Save prompt
@@ -359,8 +361,8 @@ def run():
 
             try:
                 summary = call_llm(prompt)
-                # Append file operations (like Pi does)
-                if file_ops_suffix:
+                # Append file operations only if the strategy opts in
+                if append_ops and file_ops_suffix:
                     summary += file_ops_suffix
                 (sess_out / f"summary_{strat}.txt").write_text(summary, encoding="utf-8")
                 sc = score_summary(summary)

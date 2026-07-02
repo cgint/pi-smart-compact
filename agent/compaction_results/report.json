@@ -1,8 +1,8 @@
 {
   "2026-07-02T20-23-33-408Z_019f2480-4320-7f34-859b-6ffb41e9ccc8": {
     "pi": {
-      "chars": 6378,
-      "words": 590,
+      "chars": 6322,
+      "words": 572,
       "structured": true,
       "decisions": true,
       "next_steps": true,
@@ -20,8 +20,8 @@
       ]
     },
     "smart": {
-      "chars": 5621,
-      "words": 459,
+      "chars": 5676,
+      "words": 646,
       "structured": true,
       "decisions": true,
       "next_steps": true,
@@ -36,8 +36,8 @@
       ]
     },
     "minimal": {
-      "chars": 2991,
-      "words": 204,
+      "chars": 1305,
+      "words": 180,
       "structured": false,
       "decisions": false,
       "next_steps": false,
