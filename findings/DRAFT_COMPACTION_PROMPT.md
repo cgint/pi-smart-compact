@@ -88,11 +88,11 @@ RULES:
 7. Store the last ~20K tokens of conversation as "kept context" (not summarized).
 
 ### Custom instructions (optional):
-If the compaction system can detect recent activity patterns, append:
+If the user provides additional direction, append:
 ```
-Additional focus: [recent activity] — e.g., "Recent activity shows debugging an error in X, then switching to implementing Y; prioritize both error traces and implementation details."
+Additional focus: {user_instructions}
 ```
-Note: This is not a session-type label (sessions are fluid). It describes what the agent has *actually been doing* in the recent past, which informs what to prioritize in the summary.
+The prompt handles the heavy lifting on its own. Custom instructions are a user override — not a system trying to guess. If the user gives direction, it steers the output. If not, the structured format still produces a high-quality summary.
 
 ## Evaluation Against NORTH-STAR Criteria
 
@@ -100,7 +100,7 @@ Note: This is not a session-type label (sessions are fluid). It describes what t
 |---|---|---|
 | Minimum characters with maximum information | ✅ | Structured sections force conciseness; only decision-relevant content preserved |
 | Preservation of bigger-picture objective | ✅ | `## Big Picture` section captures overarching goal, including goal evolution |
-| Preservation of current phase | ✅ | `### Current Phase` section explicitly identifies planning/implementation/debugging/review |
+| Preservation of current phase | ✅ | `### Work Stream Evolution` section captures trajectory, not just a snapshot
 | Preservation of current-state detail | ✅ | Last ~20K tokens kept verbatim; recent work not summarized |
 | Low noise / low irritation from stale history | ✅ | Explicit removal rules for stale chatter, repeated explanations, low-value narration |
 | Clear orientation about what matters now | ✅ | `### Next Steps` section with ordered actions |
@@ -124,7 +124,7 @@ Note: This is not a session-type label (sessions are fluid). It describes what t
 |---|---|---|---|
 | System prompt | Generic ("context summarization assistant") | Domain-specific ("session compaction specialist") | I1 |
 | Structure | Fixed template (Goal/Constraints/Progress/Decisions/Next Steps/Critical Context) | Expanded template (adds Phase, Behavioral Patterns, Lessons Learned, evidence refs) | I2, I7 |
-| Activity-aware prioritization | None | Custom instructions describe recent activity (not rigid session type) | I2, I4 |
+| Activity-aware prioritization | None | Prompt handles it via structured format; custom instructions are user-provided only, not auto-detected | I2, I4 |
 | Evidence linking | None | Evidence refs in decisions (message/timestamp/outcome) | I3 |
 | Incremental merge | Yes (UPDATE_SUMMARIZATION_PROMPT) | Yes (designed for merge) | P3 |
 | File operations | XML tags appended | XML tags in dedicated section | P4 |
