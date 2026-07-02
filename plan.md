@@ -3,32 +3,37 @@
 ## Status
 Draft 2026-07-02. Aligned to NORTH-STAR: prompt-only compaction as first milestone.
 
-## Objective
-Design a compaction prompt that outperforms Pi's built-in compaction by leveraging knowledge from existing code, traces, and papers.
+## Phased approach
 
-## Research slices
+### Phase 1 — Collect (information gathering)
+Gather findings from all sources. No synthesis or drafting yet. Accumulate evidence.
 
-### 1. Understand Pi's built-in compaction (baseline)
+### Phase 2 — Synthesize (combine → draft)
+Combine collected findings into a compaction prompt. Evaluate against NORTH-STAR criteria.
+
+## Phase 1: Research slices
+
+### 1. Baseline: Pi's built-in compaction
 - Find and read Pi's compaction implementation (prompt templates, strategies, limitations).
 - Identify where it succeeds and where it fails (stale content retention, context window waste, loss of decision state).
-- **Output:** documented baseline of what Pi does now and known failure modes.
+- **Finding to capture:** documented baseline of what Pi does now and known failure modes.
 
-### 2. Extract compaction-relevant patterns from trace-v2 data
+### 2. Trace-v2 patterns
 - Read trace-v2 sessions for evidence of: what gets lost, what's preserved, where compaction helps or harms.
 - Look for patterns in representation_metrics.md: span counts, episode boundaries, decision coverage.
-- **Output:** list of actionable insights that inform what a compaction prompt should preserve/remove.
+- **Finding to capture:** list of actionable insights that inform what a compaction prompt should preserve/remove.
 
-### 3. Study implementation code for compaction strategies
+### 3. Implementation code strategies
 - Search referenced repos for: minimal context packs, session builders, context window management, summarization prompts.
 - Extract prompt patterns, strategies, and design decisions that directly apply to compaction.
-- **Output:** catalog of compaction strategies with source references.
+- **Finding to capture:** catalog of compaction strategies with source references.
 
-### 4. Review relevant papers
+### 4. Papers
 - Consult papers referenced in sources/research-map.md for context window management, summarization, and agent memory theories.
-- **Output:** theoretical grounding for the compaction approach.
+- **Finding to capture:** theoretical grounding and specific techniques applicable to prompt-based compaction.
 
-### 5. Synthesize: draft the compaction prompt
-- Combine insights from slices 1-4 into a single compaction prompt.
+## Phase 2: Synthesize
+- Combine findings from slices 1-4 into a single compaction prompt.
 - Test: run against a real Pi session (if possible) or evaluate against criteria from NORTH-STAR.
 - **Output:** draft compaction prompt + evaluation notes.
 
