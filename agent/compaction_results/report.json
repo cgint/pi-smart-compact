@@ -1,21 +1,27 @@
 {
   "2026-07-02T20-23-33-408Z_019f2480-4320-7f34-859b-6ffb41e9ccc8": {
     "pi": {
-      "chars": 2748,
-      "words": 336,
+      "chars": 4650,
+      "words": 614,
       "structured": true,
-      "decisions": false,
-      "next_steps": false,
+      "decisions": true,
+      "next_steps": true,
       "file_ops": false,
       "sections": [
-        "✅ Completed Work",
-        "⚠️ Key Context & Constraints",
-        "🔜 Remaining Tasks"
+        "Goal",
+        "Constraints & Preferences",
+        "Progress",
+        "Done",
+        "In Progress",
+        "Blocked",
+        "Key Decisions",
+        "Next Steps",
+        "Critical Context"
       ]
     },
     "smart": {
-      "chars": 6431,
-      "words": 702,
+      "chars": 4664,
+      "words": 538,
       "structured": true,
       "decisions": true,
       "next_steps": true,
@@ -30,8 +36,8 @@
       ]
     },
     "minimal": {
-      "chars": 1203,
-      "words": 157,
+      "chars": 1039,
+      "words": 140,
       "structured": false,
       "decisions": false,
       "next_steps": false,

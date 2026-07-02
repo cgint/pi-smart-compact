@@ -1,29 +1,52 @@
-**Project:** `pi-smart-compact`
-**Objective:** Replace Pi's built-in compaction with a prompt-only mechanism to produce minimal, high-signal continuation context.
-**Status:** Research complete, implementation code finalized but unvalidated in live session.
+## Goal
+Develop and validate a "prompt-only" compaction mechanism for Pi sessions that serves as a drop-in replacement for Pi's built-in compaction. The primary objective is to intercept the `session_before_compact` hook, generate a high-signal, minimal continuation context via an LLM call (using a custom prompt defined in `findings/DRAFT_COMPACTION_PROMPT.md`), and return it to Pi, ensuring graceful fallback if the LLM call fails.
 
-### ✅ Completed Work
-1.  **Research & Synthesis:**
-    *   Analyzed Pi’s built-in compaction (baseline failures: truncation, lack of strategy).
-    *   Analyzed `trace-v2` patterns (decision traces, evidence links, episode boundaries).
-    *   Reviewed academic papers (ACE, GAM, STRATUS) for context engineering principles.
-    *   Created `Consolidated Findings` documenting what to preserve (structured sections, evidence, incremental merge) and remove (truncated tools, generic instructions).
-2.  **Artifact Creation:**
-    *   `NORTH-STAR.md`: Defines goal (prompt-only compaction, no side-storage for first milestone).
-    *   `DRAFT_COMPACTION_PROMPT.md`: Finalized compaction prompt incorporating all findings.
-    *   `README.md`, `CONCEPTS`, `PATTERNS`: Documentation for context pointers, minimal progress capsules, and evidence-linked traces.
-3.  **Extension Development:**
-    *   Identified that `session_before_compact` is the correct hook.
-    *   Solved authentication issue: Pi's `ctx.modelRegistry` provides access to API keys/model definitions, allowing `complete()` calls within extensions.
-    *   Implemented `index.ts` logic to intercept compaction, load prompt from MD, resolve model/auth via `ctx`, and return custom summary.
+## Constraints & Preferences
+- **Prompt-Only Milestone:** The first milestone must rely solely on a prompt-based transformation; no side-storage, lookup tables, or external retrieval systems during the compaction act.
+- **Graceful Degradation:** If the custom LLM call fails, the extension must automatically fall back to Pi's native compaction to avoid session disruption.
+- **Auth Handling:** Must use Pi's internal `ctx.modelRegistry` for authentication; cannot construct external auth or bypass Pi's security layers.
+- **Output Structure:** The generated compaction must follow a specific structured format (Goal, Constraints, Progress, Decisions, Next Steps, Critical Context) to ensure readability for subsequent agents.
+- **Preservation Rules:** Must preserve exact file paths, function names, error messages, and the last ~20K tokens of conversation verbatim.
 
-### ⚠️ Key Context & Constraints
-*   **Prompt-Only Constraint:** The first milestone must rely solely on the LLM prompt. No external retrieval systems or side-file lookups during runtime compaction.
-*   **Auth Resolution:** Extensions cannot access `modelRegistry` directly via standard imports; it is bound to the event handler context (`ctx`). Must use `ctx.modelRegistry.getApiKeyAndHeaders(model)` to authenticate.
-*   **Fallback:** If LLM call fails, extension must fall back to Pi's native compaction to avoid session disruption.
-*   **Validation Gap:** The extension code (`index.ts`) and prompt (`DRAFT_COMPACTION_PROMPT.md`) have been theoretically verified and simulated locally but have **never been tested in a live Pi session**.
+## Progress
+### Done
+- [x] Conducted comprehensive research on Pi's built-in compaction (baseline), trace-v2 patterns, implementation code strategies, and academic papers (ACE, GAM, etc.).
+- [x] Synthesized findings into `findings/CONSOLIDATED_FINDINGS.md` and individual slice files (`01-` through `06-`).
+- [x] Identified the critical failure of previous extension attempts (auth/model access issues).
+- [x] Developed and documented the "Fixed Approach" using `ctx.modelRegistry` in `findings/06-fixed-approach.md`.
+- [x] Created the draft compaction prompt in `findings/DRAFT_COMPACTION_PROMPT.md`.
+- [x] Established the project structure and handoff documentation (`HANDOFF.md`, `NORTH-STAR.md`, `README.md`).
 
-### 🔜 Remaining Tasks
-1.  **Live Validation:** Deploy the extension to a live Pi session to verify that `ctx.modelRegistry` correctly resolves auth and that the custom compaction output meets quality standards.
-2.  **Refine Prompt:** Iterate on `DRAFT_COMPACTION_PROMPT.md` based on live output quality (checking for hallucination, completeness, and token efficiency).
-3.  **Edge Case Handling:** Ensure robust handling of model resolution errors or missing API keys in production environments.
+### In Progress
+- [ ] Implementing the TypeScript extension code (`index.ts`) based on the `06-fixed-approach.md` solution.
+- [ ] Integrating the `DRAFT_COMPACTION_PROMPT.md` content into the extension logic.
+- [ ] Testing the extension locally to verify `session_before_compact` interception and successful compaction return.
+
+### Blocked
+- [ ] **Validation Gap:** The MVP prompt has been simulated but not yet validated against a live Pi session due to the need for the working extension code.
+- [ ] **Auth Complexity:** Requires careful handling of `ctx.modelRegistry` to resolve API keys correctly for the target model (e.g., `8001-sparky`).
+
+## Key Decisions
+- **[Architecture Change]**: Switched from attempting to inject custom prompts into Pi's internal JS engine to building a standalone Node.js extension that intercepts the `session_before_compact` event.
+- **[Auth Resolution]**: Decided to use `ctx.modelRegistry.getApiKeyAndHeaders(model)` provided by Pi's runner context rather than deriving auth manually, which previously caused failures.
+- **[Compaction Strategy]**: Adopted a "structured summary" approach inspired by Pi's existing template but enhanced with "evidence-linked decisions" and "context pointers" for lower-priority details, based on ACE paper principles.
+- **[Fallback Mechanism]**: Explicitly implemented a try-catch block around the LLM call to revert to Pi's default behavior on failure, ensuring stability.
+
+## Next Steps
+1. Write the `index.ts` extension entry point that listens for `session_before_compact`.
+2. Implement the logic to read `findings/DRAFT_COMPACTION_PROMPT.md` and serialize the session history for the LLM call.
+3. Use `ctx.model` and `ctx.modelRegistry` to make the LLM completion request.
+4. Map the LLM response to the `SessionBeforeCompactResult` type and return it.
+5. Install the extension (`pipa install -c .`) and test with a sample Pi session to verify compaction occurs and fallback works on error.
+
+## Critical Context
+- **Key Files:**
+    - `findings/06-fixed-approach.md`: Contains the technical solution for auth and model resolution.
+    - `findings/DRAFT_COMPACTION_PROMPT.md`: The actual prompt string used for compaction.
+    - `index.ts`: The target file for the extension code (currently empty/not written).
+    - `package.json` / `tsconfig.json`: Project configuration for the extension.
+- **Technical Details:**
+    - Pi Version: v0.80.3.
+    - Hook: `session_before_compact` receives `(event, ctx)`.
+    - Auth: `ctx.modelRegistry` is available in the handler context.
+    - Return Type: Must conform to `SessionBeforeCompactResult` from Pi's types.
