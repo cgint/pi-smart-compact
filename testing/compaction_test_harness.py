@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 
 # Config
 BASE_DIR = Path(__file__).parent.parent
-SESSIONS_DIR = Path(os.environ.get("PI_SESSIONS_DIR", "/Users/cgint/.pi/agent/sessions"))
+SESSIONS_DIR = BASE_DIR / "testing" / "sessions"
 OUTPUT_DIR = BASE_DIR / "testing" / "compaction_results"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -49,6 +49,13 @@ def discover_sessions(workspace_filter=None):
     sessions = []
     if not SESSIONS_DIR.exists():
         print(f"WARNING: Sessions dir not found: {SESSIONS_DIR}", file=sys.stderr)
+        return sessions
+    # Check for flat layout (JSONL files directly in SESSIONS_DIR)
+    direct_jsonl = sorted(SESSIONS_DIR.glob("*.jsonl"))
+    if direct_jsonl:
+        for f in direct_jsonl:
+            if not workspace_filter or workspace_filter in f.name:
+                sessions.append({"path": str(f), "workspace": "flat", "filename": f.name})
         return sessions
     for ws_dir in sorted(SESSIONS_DIR.iterdir()):
         if not ws_dir.is_dir():

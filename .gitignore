@@ -28,7 +28,7 @@ dist/
 *~
 
 # Testing sessions (client data — public repo)
-testing/sessions/
+testing/sessions/*.jsonl
 
 # Testing outputs (generated, not source)
 testing/compaction_results/
