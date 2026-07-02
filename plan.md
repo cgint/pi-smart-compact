@@ -37,6 +37,13 @@ Combine collected findings into a compaction prompt. Evaluate against NORTH-STAR
 - Test: run against a real Pi session (if possible) or evaluate against criteria from NORTH-STAR.
 - **Output:** draft compaction prompt + evaluation notes.
 
+## Phase 3: Field Testing (next phase)
+- Deploy the draft prompt in live Pi sessions.
+- Observe: does the resumed agent pick up smoothly? Any confusion or drift?
+- Compare: run Pi's built-in compaction on the same sessions and note differences in UX.
+- Iterate: refine the prompt based on real usage, not synthetic benchmarks.
+- **Output:** field notes, prompt revisions, and a verdict on whether it's actually better.
+
 ## Pre-flight check
 - Verify all relative paths resolve from repo root before starting.
 

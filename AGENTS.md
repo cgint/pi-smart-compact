@@ -20,8 +20,9 @@
 - Original papers: referenced in sources/research-map.md
 
 ### Active work
-- **Not yet started.** No research slices executed yet.
-- Pending: pivot research plan to focus on prompt-only compaction design.
+- **MVP prompt complete.** Draft compaction prompt designed, grounded in all findings, tested with simulation pipeline.
+- **Next:** Field testing — deploy in live Pi sessions, observe resumed agent behavior, iterate based on real usage.
+- **Open questions remain** — see below.
 
 ### Open questions
 1. What exactly does Pi's built-in compaction do, and where does it fail?
@@ -32,3 +33,4 @@
 ### Timeline
 - 2026-07-02T08:33Z — First Pi session started (see initial_session.md)
 - 2026-07-02T11:20Z — Git re-initialized, North Star updated, .gitignore revised
+- 2026-07-02T18:00Z — MVP prompt complete; transitioning to field testing phase
