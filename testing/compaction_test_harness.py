@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 # Config
 BASE_DIR = Path(__file__).parent.parent
 SESSIONS_DIR = Path(os.environ.get("PI_SESSIONS_DIR", "/Users/cgint/.pi/agent/sessions"))
-OUTPUT_DIR = BASE_DIR / "agent" / "compaction_results"
+OUTPUT_DIR = BASE_DIR / "testing" / "compaction_results"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_URL = os.environ.get("COMPACT_MODEL_URL", "http://sparky:8001/v1/chat/completions")
