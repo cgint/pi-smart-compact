@@ -2,6 +2,8 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { complete } from "@earendil-works/pi-ai/compat";
+import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 console.log("[pi-smart-compact] Module loaded, __dirname:", __dirname);
@@ -22,86 +24,6 @@ function loadPrompt(): string | null {
   }
 }
 
-// Pi's default compaction prompts (from compaction.js)
-const PI_DEFAULT_SYSTEM_PROMPT = "You are a context summarization assistant.";
-const PI_DEFAULT_INITIAL_PROMPT = "The messages above are a conversation to summarize. Create a structured context checkpoint summary";
-const PI_DEFAULT_UPDATE_PROMPT = "The messages above are NEW conversation messages to incorporate into the existing summary";
-const PI_DEFAULT_TURN_PREFIX_PROMPT = "This is the PREFIX of a turn that was too large to keep";
-
-/**
- * Detect if this request is a compaction summarization call by checking
- * for Pi's distinctive default prompt texts in the payload.
- */
-function isCompactionRequest(payload: any): boolean {
-  if (!payload || !payload.messages) return false;
-  const text = JSON.stringify(payload);
-  // Check for Pi's distinctive compaction prompt signatures
-  return (
-    text.includes(PI_DEFAULT_SYSTEM_PROMPT) ||
-    text.includes(PI_DEFAULT_INITIAL_PROMPT) ||
-    text.includes(PI_DEFAULT_UPDATE_PROMPT) ||
-    text.includes(PI_DEFAULT_TURN_PREFIX_PROMPT)
-  );
-}
-
-/**
- * Replace Pi's default compaction prompts with our custom prompt.
- * Handles both OpenAI-style (messages with role: "system") and
- * Anthropic-style (top-level system field) payloads.
- */
-function swapCompactionPrompts(payload: any, customPrompt: string): any {
-  // Clone to avoid mutating the original
-  const modified = JSON.parse(JSON.stringify(payload));
-
-  // --- Handle system prompt ---
-  if (modified.system) {
-    // Anthropic-style: top-level system field
-    if (typeof modified.system === "string" && modified.system.includes(PI_DEFAULT_SYSTEM_PROMPT)) {
-      modified.system = "You are a session compaction specialist. Produce only the structured output — no conversation, no commentary.";
-    }
-  } else if (Array.isArray(modified.messages)) {
-    // OpenAI-style: system in messages array
-    for (const msg of modified.messages) {
-      if (msg.role === "system" && typeof msg.content === "string" && msg.content.includes(PI_DEFAULT_SYSTEM_PROMPT)) {
-        msg.content = "You are a session compaction specialist. Produce only the structured output — no conversation, no commentary.";
-        break;
-      }
-    }
-  }
-
-  // --- Handle user prompt (the main compaction template) ---
-  if (Array.isArray(modified.messages)) {
-    for (let i = 0; i < modified.messages.length; i++) {
-      const msg = modified.messages[i];
-      if (msg.role === "user" && typeof msg.content === "string") {
-        // Check if this is a compaction prompt (contains one of Pi's default templates)
-        if (
-          msg.content.includes(PI_DEFAULT_INITIAL_PROMPT) ||
-          msg.content.includes(PI_DEFAULT_UPDATE_PROMPT) ||
-          msg.content.includes(PI_DEFAULT_TURN_PREFIX_PROMPT)
-        ) {
-          // Replace the compaction template with our custom prompt
-          // Keep the conversation and previous-summary wrappers if present
-          const convMatch = msg.content.match(/<conversation>[\s\S]*<\/conversation>/);
-          const prevMatch = msg.content.match(/<previous-summary>[\s\S]*<\/previous-summary>/);
-          
-          let replacement = `<conversation>\n${convMatch ? convMatch[0] : ""}\n</conversation>`;
-          if (prevMatch) {
-            replacement += `\n\n${prevMatch[0]}`;
-          }
-          replacement += `\n\n${customPrompt}`;
-          
-          console.log("[pi-smart-compact] Swapped compaction prompt for turn");
-          msg.content = replacement;
-          break;
-        }
-      }
-    }
-  }
-
-  return modified;
-}
-
 export default function register(pi: ExtensionAPI): void {
   try {
     console.log("[pi-smart-compact] register() called");
@@ -112,19 +34,118 @@ export default function register(pi: ExtensionAPI): void {
       return;
     }
 
-    // Intercept compaction requests before they reach the LLM
-    pi.on("before_provider_request", (event) => {
-      if (!event.payload) return;
+    pi.on("session_before_compact", async (event, ctx) => {
+      console.log("[pi-smart-compact] session_before_compact fired, reason:", event.reason);
 
-      if (isCompactionRequest(event.payload)) {
-        console.log("[pi-smart-compact] Detected compaction request, swapping prompts");
-        const swapped = swapCompactionPrompts(event.payload, customPrompt);
-        console.log("[pi-smart-compact] Prompt swapped successfully");
-        return swapped; // Return modified payload to Pi
+      const { preparation, signal } = event;
+      const { messagesToSummarize, turnPrefixMessages, firstKeptEntryId, previousSummary, tokensBefore } = preparation;
+
+      // Get the session's current model from ctx
+      const model = ctx.model;
+      if (!model) {
+        console.warn("[pi-smart-compact] No current model available, falling back to Pi's default");
+        return;
+      }
+      console.log("[pi-smart-compact] Using model:", model.id, "from provider:", model.provider);
+
+      // Resolve auth via Pi's model registry (handles models.json, env vars, etc.)
+      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!auth.ok) {
+        console.warn("[pi-smart-compact] Auth resolution failed:", auth.error || "unknown error", "falling back");
+        return;
+      }
+      if (!auth.apiKey && model.provider !== "8001-twins" && model.provider !== "8001-sparky") {
+        console.warn("[pi-smart-compact] No API key for provider:", model.provider, "falling back");
+        return;
+      }
+
+      // Combine all messages for summarization
+      const allMessages = [...messagesToSummarize, ...turnPrefixMessages];
+      if (allMessages.length === 0) {
+        console.log("[pi-smart-compact] No messages to summarize");
+        return;
+      }
+
+      console.log("[pi-smart-compact] Summarizing", allMessages.length, "messages,", tokensBefore.toLocaleString(), "tokens");
+
+      // Convert messages to LLM format and serialize
+      const llmMessages = convertToLlm(allMessages);
+      const conversationText = serializeConversation(llmMessages);
+
+      // Build the summary request
+      const summaryMessages = [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: `You are a conversation summarizer. Create a comprehensive summary of this conversation that captures:
+
+1. The main goals and objectives discussed
+2. Key decisions made and their rationale
+3. Important code changes, file modifications, or technical details
+4. Current state of any ongoing work
+5. Any blockers, issues, or open questions
+6. Next steps that were planned or suggested
+
+Be thorough but concise. The summary will replace the ENTIRE conversation history, so include all information needed to continue the work effectively.
+
+Format the summary as structured markdown with clear sections.
+
+${previousSummary ? `Previous session summary for context:\n${previousSummary}` : ""}
+
+<conversation>
+${conversationText}
+</conversation>
+
+---
+
+${customPrompt}`,
+            },
+          ],
+          timestamp: Date.now(),
+        },
+      ];
+
+      try {
+        const response = await complete(
+          model,
+          { messages: summaryMessages },
+          {
+            apiKey: auth.apiKey,
+            headers: auth.headers,
+            env: auth.env,
+            maxTokens: 8192,
+            signal,
+          },
+        );
+
+        const summary = response.content
+          .filter((c): c is { type: "text"; text: string } => c.type === "text")
+          .map((c) => c.text)
+          .join("\n");
+
+        if (!summary.trim()) {
+          console.warn("[pi-smart-compact] Summary was empty, falling back to Pi's default");
+          return;
+        }
+
+        console.log("[pi-smart-compact] Generated summary:", summary.length, "chars");
+        return {
+          compaction: {
+            summary,
+            firstKeptEntryId,
+            tokensBefore,
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[pi-smart-compact] Compaction failed:", message, "falling back to Pi's default");
+        return;
       }
     });
 
-    console.log("[pi-smart-compact] Registered before_provider_request handler");
+    console.log("[pi-smart-compact] Registered session_before_compact handler");
   } catch (err) {
     console.error("[pi-smart-compact] register() crashed:", err);
   }
