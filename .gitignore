@@ -9,6 +9,8 @@ node_modules/
 # macOS
 .DS_Store
 
+.pi
+
 # Logs
 *.log
 
