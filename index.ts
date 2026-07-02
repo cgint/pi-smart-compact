@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+console.log("[pi-smart-compact] Module loaded, __dirname:", __dirname);
 
 /**
  * Load the compaction prompt from the markdown file at startup.
@@ -102,21 +103,29 @@ function swapCompactionPrompts(payload: any, customPrompt: string): any {
 }
 
 export default function register(pi: ExtensionAPI): void {
-  const customPrompt = loadPrompt();
-  if (!customPrompt) {
-    console.warn("[pi-smart-compact] No prompt loaded, compaction interception disabled");
-    return;
-  }
+  try {
+    console.log("[pi-smart-compact] register() called");
 
-  // Intercept compaction requests before they reach the LLM
-  pi.on("before_provider_request", (event) => {
-    if (!event.payload) return;
-
-    if (isCompactionRequest(event.payload)) {
-      console.log("[pi-smart-compact] Detected compaction request, swapping prompts");
-      const swapped = swapCompactionPrompts(event.payload, customPrompt);
-      console.log("[pi-smart-compact] Prompt swapped successfully");
-      return swapped; // Return modified payload to Pi
+    const customPrompt = loadPrompt();
+    if (!customPrompt) {
+      console.warn("[pi-smart-compact] No prompt loaded, compaction interception disabled");
+      return;
     }
-  });
+
+    // Intercept compaction requests before they reach the LLM
+    pi.on("before_provider_request", (event) => {
+      if (!event.payload) return;
+
+      if (isCompactionRequest(event.payload)) {
+        console.log("[pi-smart-compact] Detected compaction request, swapping prompts");
+        const swapped = swapCompactionPrompts(event.payload, customPrompt);
+        console.log("[pi-smart-compact] Prompt swapped successfully");
+        return swapped; // Return modified payload to Pi
+      }
+    });
+
+    console.log("[pi-smart-compact] Registered before_provider_request handler");
+  } catch (err) {
+    console.error("[pi-smart-compact] register() crashed:", err);
+  }
 }
