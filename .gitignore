@@ -1,2 +1,26 @@
-# Internal scratch — not part of the knowledge base
-agent/
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Node.js artifacts
+node_modules/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Cache directories (external repo copies, build caches)
+sources/cache/
+.cache/
+
+# Build/output directories
+build/
+dist/
+
+# Editor swap/backup
+*.swp
+*.swo
+*~
