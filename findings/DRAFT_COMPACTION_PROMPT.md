@@ -26,8 +26,8 @@ RULES:
 ### Big Picture
 [What is the overarching goal? If the goal shifted during the session, note the evolution.]
 
-### Current Phase
-[Planning / Implementation / Debugging / Review / Other — what phase is the session in now?]
+### Work Stream Evolution
+[How the session's active focus has migrated over time. E.g., "Goal initiated as X, transitioned to Y at step N due to error Z, currently active on W." Record the sequence of shifts, not just the current state. This preserves the full trajectory, not just a snapshot.]
 
 ### Constraints & Preferences
 - [Any constraints, preferences, or requirements from the user]
@@ -88,10 +88,11 @@ RULES:
 7. Store the last ~20K tokens of conversation as "kept context" (not summarized).
 
 ### Custom instructions (optional):
-If the compaction system knows the session type, append:
+If the compaction system can detect recent activity patterns, append:
 ```
-Additional focus: [session type] — e.g., "This is a debugging session; prioritize error traces, attempted fixes, and environment diagnostics over general progress."
+Additional focus: [recent activity] — e.g., "Recent activity shows debugging an error in X, then switching to implementing Y; prioritize both error traces and implementation details."
 ```
+Note: This is not a session-type label (sessions are fluid). It describes what the agent has *actually been doing* in the recent past, which informs what to prioritize in the summary.
 
 ## Evaluation Against NORTH-STAR Criteria
 
@@ -123,7 +124,7 @@ Additional focus: [session type] — e.g., "This is a debugging session; priorit
 |---|---|---|---|
 | System prompt | Generic ("context summarization assistant") | Domain-specific ("session compaction specialist") | I1 |
 | Structure | Fixed template (Goal/Constraints/Progress/Decisions/Next Steps/Critical Context) | Expanded template (adds Phase, Behavioral Patterns, Lessons Learned, evidence refs) | I2, I7 |
-| Session-type awareness | None | Optional custom instructions for session type | I2, I4 |
+| Activity-aware prioritization | None | Custom instructions describe recent activity (not rigid session type) | I2, I4 |
 | Evidence linking | None | Evidence refs in decisions (message/timestamp/outcome) | I3 |
 | Incremental merge | Yes (UPDATE_SUMMARIZATION_PROMPT) | Yes (designed for merge) | P3 |
 | File operations | XML tags appended | XML tags in dedicated section | P4 |
