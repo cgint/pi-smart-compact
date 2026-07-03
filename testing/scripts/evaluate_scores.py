@@ -19,7 +19,7 @@ DIM_NAMES = [
     "Evidence Anchoring",
     "Structural Completeness",
 ]
-MAX_POSSIBLE = sum([10 * w for w in WEIGHTS])  # 10 * 9.5 = 95
+MAX_POSSIBLE = sum([5 * w for w in WEIGHTS])  # 5 * 9.5 = 47.5
 
 
 def load_scores(path):
