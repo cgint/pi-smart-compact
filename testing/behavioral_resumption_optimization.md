@@ -60,8 +60,22 @@ Restructured output format:
 - `## Later Tasks` (new, for post-session housekeeping)
 - `## Current State` updated to include unresolved issues/errors
 
+## Round 2: Pushing Beyond 22/25 (Iteration 4)
+
+**Goal:** Reach 24+/25 on the 5-dimension rubric.
+
+**Diagnosis:** The compaction still scores 4 (not 5) on Goal Precision, State Fidelity, Action Specificity, and Context Retention. The missing depth: 404 errors, tmux logs, `chat_model.py:151` traceback.
+
+**Prompt change:** Added rules 11-12 demanding specific error details (HTTP status codes, traceback lines, tmux session names) in "Last Session Activity" and "Current State".
+
+**Result:** Smart still ~22/25. The agent still identifies "verify RAG pipeline" as the goal with `agent-browser` as the first action — same as iteration 3.
+
+**Root cause discovered:** The deeper debugging context (404, `chat_model.py:151`, tmux 'meno-server', `gemini-2.0-flash` model death) is in the **remaining 30%** of the session — after the 70% split point. The compaction model literally cannot see this information. This is a **structural ceiling**, not a prompt problem.
+
+**Conclusion:** Cannot push beyond ~22/25 on Slot 2 without changing the split point or feeding the full session. Further prompt iterations will not help — the model lacks the data. Optimization complete.
+
 ## Caveats
 
 - Tested on Slot 2 only (web-scrape-meno). Multi-session validation needed to confirm generalization.
-- The compaction still misses some debugging depth (404 errors, tmux logs, `chat_model.py:151` were not captured in "Last Session Activity"). Further refinement may be needed for sessions with deeper debugging tails.
+- The 70% split point creates a structural ceiling: debugging context after the split is invisible to the compaction.
 - The improvement is session-dependent — a session that ends cleanly may not benefit from the "Last Session Activity" section.
