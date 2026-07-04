@@ -68,7 +68,23 @@ Restructured output format:
 
 **Prompt change:** Added rules 11-12 demanding specific error details (HTTP status codes, traceback lines, tmux session names) in "Last Session Activity" and "Current State".
 
-**Result:** Smart still ~22/25. The agent still identifies "verify RAG pipeline" as the goal with `agent-browser` as the first action — same as iteration 3.
+**Result (formal 5-dim scoring):**
+
+| Dimension | Score | Justification |
+|---|---|---|
+| Goal Precision | 4 | "Verify full RAG pipeline workflow" — near match, same domain |
+| State Fidelity | 4 | Knows test message sent but response not confirmed |
+| Action Specificity | 4 | `agent_browser.submit_message()` — correct tool, right target |
+| Context Retention | 4 | References specific URL, mentions RAG pipeline |
+| Drift Resistance | 5 | Stays on task — no pivot to housekeeping |
+| **Total** | **22/25** | Identical to iteration 3 — no improvement |
+
+**Structural ceiling proof:**
+The deeper debugging context (404, `chat_model.py:151`, tmux 'meno-server', `gemini-2.0-flash` model death) is in the **remaining 30%** of the session after the 70% split point:
+- `conversation.txt` (visible to compaction): 4 mentions of debugging terms
+- `remaining.txt` (invisible to compaction): 28 mentions including the core debugging sequence
+
+The compaction model **cannot** extract details it cannot see. This is a structural ceiling, not a prompt problem.
 
 **Root cause discovered:** The deeper debugging context (404, `chat_model.py:151`, tmux 'meno-server', `gemini-2.0-flash` model death) is in the **remaining 30%** of the session — after the 70% split point. The compaction model literally cannot see this information. This is a **structural ceiling**, not a prompt problem.
 
