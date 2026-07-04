@@ -1,0 +1,9 @@
+{
+  "condition": "control",
+  "compaction_file": null,
+  "prompt_length": 191,
+  "response_length": 546,
+  "model": "qwen36-35b-nvidia-nvfp4",
+  "temperature": 0.1,
+  "response": "It appears that this is a fresh interaction or the context from the previous session has not been carried over, as indicated by the message \"No compaction summary is available.\"\n\nTo assist you effectively, please provide:\n1. **The current goal** or task you are working on.\n2. **Any relevant context**, files, code snippets, or data from the previous session.\n3. **What you would like to do next**.\n\nOnce you provide this information, I will inspect the workspace (if applicable) and determine the next logical step to help you achieve your goal."
+}
