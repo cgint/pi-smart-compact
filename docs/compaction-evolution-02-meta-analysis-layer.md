@@ -294,14 +294,31 @@ If we skip meta-analysis for sessions where smart output < X chars:
 
 **Quality check:** Spot-checked all 4 sessions. Meta-analysis is high-signal across session types — specific assumptions, real reasoning gaps, grounded risks. No generic fluff detected.
 
+### 7.5 Competitive context: smart_meta vs Pi
+
+The real benchmark is Pi, not smart. Compared to Pi's output:
+
+| Session | pi | smart | smart_meta | smart_meta vs pi |
+|---|---|---|---|---|
+| Slot 1 (discuss-mode) | 4554 | 2768 | 5647 | **+1093** |
+| Slot 2 (smart-compact) | 7684 | 5628 | 8045 | +361 |
+| Slot 3 (web-scrape) | 5029 | 4944 | 7882 | +2853 |
+| Slot 4 (deploy) | 8836 | 5497 | 6181 | **-2655** |
+| **AVG** | **6525** | **4709** | **6938** | **+413 (+6%)** |
+
+**On average, smart_meta (6938) is only +6% larger than Pi (6525).** And on Slot 4 it's actually *smaller* than Pi (-30%). The +100% headline on Slot 1 is smart→smart_meta, not smart_meta→Pi.
+
+**Perspective:** smart was intentionally lean (4709 avg, -28% vs Pi). Adding meta-analysis brings us to roughly Pi's size (6938 vs 6525) while delivering +1 rubric improvement. We're trading ~6% more tokens for measurable quality gain — that's a good deal.
+
 ### 7.4 Conclusion
 
 The meta-analysis layer delivers **+1 on the 5-dimension rubric** for Slot 2 (22→23/25), with high-quality signal across all 4 sessions. Key findings:
 
+- **vs Pi (real benchmark):** smart_meta averages only +6% larger than Pi (6938 vs 6525 chars). On some sessions it's smaller than Pi. We're trading ~6% more tokens for measurable quality gain.
+- **vs smart (our baseline):** smart was intentionally lean (-28% vs Pi). Meta-analysis brings us to roughly Pi's size while beating Pi on rubric score.
 - **Constant overhead:** ~2400-2900 chars (~600-730 tokens) regardless of session complexity
-- **No overflow risk:** Largest output (8041 chars) well within Pi's 16K reserve
-- **Simplest sessions benefit most:** Paradox — small base output sessions gain the most relative value from meta-analysis, because there's less operational detail anchoring the resumed agent
-- **Conditional mode not recommended:** Arbitrary thresholds risk cutting the sessions that benefit most; absolute cost is affordable
+- **No overflow risk:** Largest output (8045 chars) well within Pi's 16K reserve
+- **Simplest sessions benefit most:** Paradox — small base output sessions gain the most relative value
 - **Recommendation: keep mandatory** at current bounds (max 3 items per subsection)
 
 ---
