@@ -21,7 +21,9 @@
 
 ### Active work
 - **MVP prompt complete.** Draft compaction prompt designed, grounded in all findings, tested with simulation pipeline.
-- **Next:** Field testing — deploy in live Pi sessions, observe resumed agent behavior, iterate based on real usage.
+- **Behavioral pilot complete.** Prompt optimized through 4 iterations; two-axis framework converged (see evolution docs).
+- **Next:** Field testing — deploy refined prompt in live Pi sessions, observe resumed agent behavior, iterate based on real usage.
+- **Evolution docs:** [`docs/compaction-evolution.md`](docs/compaction-evolution.md) — phase-scoped development history.
 - **Open questions remain** — see below.
 
 ### Open questions
@@ -34,3 +36,5 @@
 - 2026-07-02T08:33Z — First Pi session started (see initial_session.md)
 - 2026-07-02T11:20Z — Git re-initialized, North Star updated, .gitignore revised
 - 2026-07-02T18:00Z — MVP prompt complete; transitioning to field testing phase
+- 2026-07-03 — Behavioral pilot: rubric ≠ behavioral utility discovered; prompt optimized (1/3 → 3/3 → 22/25)
+- 2026-07-05 — AI ergonomics convergence; two-axis framework; evolution docs created in `docs/`

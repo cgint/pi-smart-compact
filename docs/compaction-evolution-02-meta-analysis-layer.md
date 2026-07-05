@@ -1,0 +1,282 @@
+# Compaction Evolution — Phase 02: Meta-Analysis Layer
+
+> **Period:** 2026-07-05 →
+> **Status:** Exploration
+> **Parent:** [Compaction Evolution Index](./compaction-evolution.md)
+> **Inspiration:** `criticalthink` skill pattern
+> **Axis:** 1 (Encoding Quality)
+
+---
+
+## 1. Motivation
+
+The behavioral pilot (Phase 01) revealed that operational summaries alone are insufficient. The resumed agent needs **meta-awareness** — not just "here's where we are" but "here's the quality of our reasoning and what to watch for."
+
+The `criticalthink` skill (`agent/skills/criticalthink-retro/SKILL.md`) demonstrates a proven pattern: force structured self-skepticism through a fixed 6-section scaffold. The AI can't skip to "looks good" because the format demands it find weaknesses first.
+
+**Opportunity:** Adapt this pattern for session-level compaction. Add a lightweight meta-analysis layer that encodes reasoning quality, assumptions, risks, and uncertainty zones — giving the resumed agent guardrails alongside operational state.
+
+---
+
+## 2. Source Pattern: criticalthink Framework
+
+The criticalthink skill uses this structure:
+
+| Section | Purpose | Session-Level Translation | Value |
+|---|---|---|---|
+| §1 Core Thesis | Name the claim + confidence | → Already captured by "Goal" section | Redundant |
+| §2 Assumptions | What must be true for this to work | → **Working Assumptions** | **High** |
+| §3 Logical Gaps | Does reasoning connect? | → **Reasoning Gaps** | **High** |
+| §4 AI Pitfalls | Evasion, happy path, over-engineering | → **Session Blindspots** | **Medium** |
+| §5 Risks | Overlooked risks + alternatives | → **Known Risks & Alternatives** | **High** |
+| §6 Synthesis | Revise confidence after analysis | → **Uncertainty Zones** | **Medium** |
+
+Not all sections translate equally. The compaction already captures operational state. We need the **meta-layer** — the parts that are currently missing.
+
+---
+
+## 3. Proposed Design
+
+### New section: `## Session Integrity Check`
+
+Appended to the existing compaction output format, after operational sections (Goal, Progress, Decisions, Next Steps).
+
+```markdown
+## Session Integrity Check
+
+### Working Assumptions
+- [Key assumptions the current path depends on, with fragility noted]
+- Format: "Assumption: X. Fragile if: Y."
+- Max 4 items. Prioritize assumptions that, if wrong, would invalidate the current direction.
+
+### Reasoning Gaps
+- [Where decisions were made on incomplete evidence or where the session may have evaded a harder problem]
+- Format: "Gap: [what was decided]. Weakness: [why the reasoning may be thin]."
+- Max 3 items. Focus on decisions with thin evidence chains.
+
+### Known Risks & Alternatives
+- [Approaches considered but discarded, with rationale; risks not yet addressed]
+- Format: "Risk: X. Alternative considered: Y (discarded because Z)."
+- Max 3 items. Surface near-misses and deferred decisions.
+
+### Uncertainty Zones
+- [Areas where the session lacks conclusive evidence]
+- Format: "Uncertain: X. Needs verification: Y."
+- Max 3 items. Flag what the resumed agent should re-check before proceeding.
+```
+
+### Design principles
+
+1. **Structured format, not narrative** — follows the declarative-state rule from AI ergonomics work (Phase 01, §3). Each item has a template shape so the resumed agent can parse it mechanically.
+
+2. **Forward utility** — not "here's what went wrong" but "here's what to watch for when continuing." Each subsection answers a question the resumed agent would ask.
+
+3. **Bounded length** — 3-4 items max per subsection. Forces prioritization, prevents fluff.
+
+4. **Axis 1 scope** — improves encoding quality without changing the split strategy. Low risk to implement.
+
+---
+
+## 4. Example: Applied to a Real Session
+
+*Based on the behavioral pilot session (Slot 2) where the agent was debugging a 404 error in `chat_model.py:151`.*
+
+**Without meta-analysis (current):**
+
+```markdown
+## Next Steps
+1. Verify AI response to test message
+2. Check tmux session 'meno-server' for error logs
+```
+
+**With meta-analysis (proposed):**
+
+```markdown
+## Next Steps
+1. Verify AI response to test message
+2. Check tmux session 'meno-server' for error logs
+
+## Session Integrity Check
+
+### Working Assumptions
+- Assumption: The 404 originates from chat_model.py:151. Fragile if: the error is actually upstream (proxy/load balancer) and the traceback is misleading.
+- Assumption: Node 18 is the CI constraint causing build failures. Fragile if: CI environment has been upgraded since the session.
+
+### Reasoning Gaps
+- Gap: Decision to patch chat_model.py directly. Weakness: Root cause of the 404 was not confirmed — patch addresses symptoms, not source.
+
+### Known Risks & Alternatives
+- Risk: Patch may break other endpoints. Alternative considered: restart the service first (deferred because tmux session was unstable).
+
+### Uncertainty Zones
+- Uncertain: Whether the 404 is reproducible. Needs verification: curl the endpoint before applying patch.
+- Uncertain: Exact tmux session state after crash. Needs verification: `tmux list-sessions` on reconnect.
+```
+
+The resumed agent now knows: the next step is clear, but the reasoning behind it is thin, and there are specific things to verify before committing.
+
+---
+
+## 5. Key Decisions to Resolve
+
+### 5.1 Mandatory vs Conditional
+
+**Question:** Should "Session Integrity Check" always appear, or only when the session has detectable uncertainty/risks?
+
+| Approach | Pros | Cons |
+|---|---|---|
+| **Mandatory** | Consistent output shape; resumed agent always knows what to expect | Adds tokens to simple sessions where all subsections would be "(none)" |
+| **Conditional** | Saves tokens on straightforward sessions | Risks under-reporting; compaction model may miss subtle risks |
+
+**Tentative leaning:** Mandatory, but allow "(none)" when a subsection has nothing to report. The structural consistency is worth the token cost.
+
+### 5.2 Token Budget
+
+Rough estimate per subsection at max items:
+- Working Assumptions: ~4 × 80 tokens = 320
+- Reasoning Gaps: ~3 × 80 tokens = 240
+- Known Risks: ~3 × 80 tokens = 240
+- Uncertainty Zones: ~3 × 80 tokens = 240
+- **Total: ~1040 tokens** (worst case)
+
+Realistic average: ~400-600 tokens (most sessions won't hit max items).
+
+This is a modest increase relative to typical compaction output (~2000-4000 tokens total). Acceptable if the signal is high-quality.
+
+### 5.3 Prompt Integration
+
+The compaction prompt (`testing/compaction_test_prompt.md`) needs:
+1. The new output section added to the template
+2. A rule in the RULES block instructing the compaction model to perform meta-analysis
+3. Examples (show/don't tell) to calibrate the output quality
+
+---
+
+## 6. Test Plan
+
+### 6.1 Experiment Design
+
+**Hypothesis:** Adding the Session Integrity Check section improves behavioral resumption by surfacing reasoning quality, assumptions, and uncertainty zones — giving the resumed agent guardrails alongside operational state.
+
+**Variable:** Only the prompt changes (smart → smart+meta). Same model, same session, same 70% split.
+
+**Control:** `smart` (iteration 3, current baseline at 22/25 on Slot 2)
+**Treatment:** `smart_meta` (smart + meta-analysis rules + output section)
+
+### 6.2 Expected Impact by Dimension
+
+| Dimension | Prediction | Rationale |
+|---|---|---|
+| Goal Precision | → Neutral | Meta-analysis doesn't change goal extraction |
+| State Fidelity | ↑ Improve | Uncertainty zones surface what's unresolved more explicitly |
+| Action Specificity | ↑ Improve | Reasoning gaps flag thin decisions, agent acts more precisely |
+| Context Retention | → Neutral | Meta-analysis adds meta-context, not operational anchors |
+| Drift Resistance | ↑ Improve | Risks/alternatives section prevents pivoting to discarded paths |
+
+**Expected delta:** +1 to +2 points (22→23 or 22→24), primarily on State Fidelity and Drift Resistance.
+
+### 6.3 Test Scope
+
+- **Primary:** Slot 2 (`--Users-cgint-dev-web-scrape-meno--`) — established baseline, 22/25
+- **Secondary:** Slots 1, 3, 4 — check generalization after primary validates
+
+### 6.4 Implementation Steps
+
+1. **Create `smart_meta` prompt variant** — copy of `get_smart_prompt()` with:
+   - Additional rules (13-15) for meta-analysis generation
+   - `## Session Integrity Check` section appended to output format
+2. **Register in harness** — add `smart_meta` to `STRATEGIES` dict
+3. **Run harness** — `python3 testing/compaction_test_harness.py --sessions --Users-cgint-dev-web-scrape-meno-- --strategies smart smart_meta`
+4. **Compare outputs** — qualitative review of both compaction summaries
+5. **Behavioral evaluation** — score both on 5-dimension rubric against gold standard
+6. **Record results** — update this document with scores and diagnosis
+
+### 6.5 Success Criteria
+
+- **Minimum:** smart_meta ≥ smart on all dimensions (no regression)
+- **Target:** smart_meta ≥ 23/25 on Slot 2 (≥ +1 improvement)
+- **Stretch:** smart_meta ≥ 23/25 across all 4 slots (generalizes)
+
+### 6.6 Failure Modes
+
+| Failure | Signal | Response |
+|---|---|---|
+| Null result | smart_meta = smart (22/25) | Revisit format; maybe meta-analysis is too abstract for the resumed agent |
+| Negative result | smart_meta < smart | Meta-analysis introduces noise; simplify or make conditional |
+| Token overflow | Output exceeds model limits | Reduce item bounds (3→2 per subsection) |
+| Generic fluff | Meta-analysis sections are vague/unspecific | Add stronger examples to prompt; tighten format templates |
+
+---
+
+## 7. Test Results — Slot 2 (Primary)
+
+### 7.1 Size Impact
+
+| Metric | smart | smart_meta | Delta |
+|---|---|---|---|
+| Chars | 5053 | 6957 | +1904 (+38%) |
+| Words | 648 | 941 | +293 (+45%) |
+
+### 7.2 5-Dimension Scores (Slot 2)
+
+| Dimension | smart | smart_meta | Delta |
+|---|---|---|---|
+| Goal Precision | 4 | 4 | → |
+| State Fidelity | 4 | **5** | +1 |
+| Action Specificity | 4 | 4 | → |
+| Context Retention | 4 | **5** | +1 |
+| Drift Resistance | 5 | 5 | → |
+| **Total** | **22/25** | **23/25** | **+1** |
+
+Improvement on State Fidelity (uncertainty zones surface what's unknown) and Context Retention (meta-analysis adds operational anchors like GCS bucket status, Wix integration mechanism).
+
+See [`testing/behavioral_resumption_5dim_scores_meta.md`](testing/behavioral_resumption_5dim_scores_meta.md) for full evaluation.
+
+### 7.3 Cross-Session Size Impact (All 4 Slots)
+
+| Session | smart | smart_meta | Delta chars | Delta % |
+|---|---|---|---|---|
+| Slot 1 (discuss-mode) | 2768 | 5647 | +2879 | **+104%** |
+| Slot 2 (web-scrape) | 4940 | 7876 | +2936 | +59% |
+| Slot 3 (smart-compact) | 5628 | 8041 | +2413 | +43% |
+| Slot 4 (deploy) | 5497 | 6181 | +684 | +12% |
+
+**Pattern:** The meta-analysis adds a ~2000-3000 char floor. For sessions with small base output (Slot 1: 2768 chars), this is a large percentage increase. For richer sessions, the relative impact is moderate.
+
+**Quality check:** Spot-checked all 4 sessions. Meta-analysis is high-signal across session types — specific assumptions, real reasoning gaps, grounded risks. No generic fluff detected.
+
+### 7.4 Preliminary Conclusion
+
+The meta-analysis layer delivers **+1 on the 5-dimension rubric** for Slot 2, with high-quality signal across all 4 sessions. The token cost is acceptable for rich sessions (40-60%) but may be excessive for simple sessions (100%+). Consider conditional mode for very short sessions.
+
+---
+
+## 8. Risks
+
+1. **Generic fluff:** The compaction model may produce vague meta-analysis ("There may be risks") instead of specific insights. Mitigation: format templates force concrete structure; examples calibrate quality.
+
+2. **Over-confident meta-analysis:** The compaction model may misidentify assumptions or gaps, leading the resumed agent down wrong paths. Mitigation: bound to observable session content; ban speculation not grounded in the conversation.
+
+3. **Token budget pressure:** If sessions are already near limits, adding ~500 tokens could push over. Mitigation: monitor actual sizes; consider conditional mode if budget is tight.
+
+4. **Compaction model capability:** The meta-analysis requires the model to think critically about the session's reasoning — a harder task than summarization. May not work well on weaker models. Mitigation: test across model tiers; degrade gracefully if quality is low.
+
+---
+
+## 9. Open Questions
+
+1. Should the meta-analysis be generated by the **same model** that does the compaction, or a **separate pass** with a stronger model?
+2. Can we measure meta-analysis quality independently, or only through downstream behavioral effects?
+3. Does the format need different subsections for different session types (debugging vs planning vs implementation)?
+4. Should the resumed agent be instructed to **explicitly check** the integrity check before acting, or is passive exposure sufficient?
+5. How does this interact with Axis 2 (split strategy)? If we keep more tail raw, does the meta-analysis have better input data?
+
+---
+
+## 10. Done Criteria
+
+- [ ] Revised `compaction_test_prompt.md` with Session Integrity Check section
+- [ ] Sample output demonstrating the new section on at least 2 test sessions
+- [ ] Token cost measured and documented
+- [ ] Behavioral evaluation showing improvement (or neutral) vs 22/25 baseline
+- [ ] User confirmation that the added context feels valuable, not verbose

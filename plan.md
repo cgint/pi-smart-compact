@@ -1,7 +1,10 @@
 # Plan — Prompt-Only Compaction Research
 
 ## Status
-Draft 2026-07-02. Aligned to NORTH-STAR: prompt-only compaction as first milestone.
+Draft 2026-07-02, updated 2026-07-05. Aligned to NORTH-STAR: prompt-only compaction as first milestone.
+
+## Evolution tracking
+Phase-scoped evolution documents in [`docs/compaction-evolution.md`](docs/compaction-evolution.md). Current phase: 01 (Behavioral Pilot & Prompt Optimization) — complete. See handoff point for next phase entry.
 
 ## Phased approach
 
@@ -36,6 +39,12 @@ Combine collected findings into a compaction prompt. Evaluate against NORTH-STAR
 - Combine findings from slices 1-4 into a single compaction prompt.
 - Test: run against a real Pi session (if possible) or evaluate against criteria from NORTH-STAR.
 - **Output:** draft compaction prompt + evaluation notes.
+
+## Phase 2.5: Behavioral Pilot (complete)
+- Ran behavioral resumption experiments proving rubric scores ≠ behavioral utility.
+- Optimized prompt through 4 iterations; discovered structural ceiling (70% split).
+- Converged two-axis framework from independent sessions.
+- **Output:** [`docs/compaction-evolution-01-behavioral-pilot.md`](docs/compaction-evolution-01-behavioral-pilot.md)
 
 ## Phase 3: Field Testing (next phase)
 - Deploy the draft prompt in live Pi sessions.

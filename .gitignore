@@ -35,3 +35,5 @@ testing/compaction_results/
 testing/evaluation_slot_*.md
 testing/scores_*.json
 testing/evaluation_report*.md
+# Ignore Code Giant output directory
+.codegiant/

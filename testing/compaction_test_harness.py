@@ -245,6 +245,82 @@ def get_smart_prompt(serialized, previous_summary=None):
     return prompt
 
 
+def get_smart_meta_prompt(serialized, previous_summary=None):
+    """Smart prompt + Session Integrity Check (meta-analysis layer from criticalthink pattern)."""
+    prompt = (
+        "You are a session compaction specialist.\n\n"
+        "RULES:\n"
+        "1. Summarize what was ACTUALLY DISCUSSED and DONE — NOT file contents.\n"
+        "2. Preserve decisions with rationale.\n"
+        "3. Preserve unresolved blockers.\n"
+        "4. Preserve key file operations with exact paths.\n"
+        "5. Do NOT continue the conversation. ONLY output the structured summary.\n"
+        "6. If the session contains only file reading with no discussion, summarize what "
+        "was read and the agent's observations — do NOT invent decisions.\n"
+        "7. CRITICAL: Distinguish ACTIVE work from COMPLETED work. If the session ends "
+        "mid-debugging or mid-task, the 'Current State' MUST reflect that the work is "
+        "unresolved — do NOT describe it as finished or fully working.\n"
+        "8. CRITICAL: Read the LAST 10 exchanges in the conversation to determine what "
+        "was actively happening. The 'Immediate Next Step' MUST be the continuation of "
+        "whatever the agent/user was doing at the very end of the session. Ignore earlier "
+        "completed work when determining the next step.\n"
+        "9. CRITICAL: If the session ends with error investigation, log checking, or "
+        "debugging, the 'Current State' must explicitly state that the issue is UNRESOLVED. "
+        "Do NOT describe systems as 'fully working' if errors were still being investigated.\n"
+        "10. CRITICAL: Include a '## Last Session Activity' section describing the last "
+        "5-10 exchanges concretely — what errors were seen (HTTP codes, tracebacks, "
+        "error messages), what commands were run, what the agent was investigating. "
+        "This is the most important context for resumption.\n"
+        "11. CRITICAL: In 'Last Session Activity', include SPECIFIC error details: "
+        "HTTP status codes (e.g., 404), traceback lines (e.g., chat_model.py:151), "
+        "tmux session names, model names tried. Generic descriptions like 'checking logs' "
+        "are NOT sufficient — the resumed agent needs the exact error signatures.\n"
+        "12. CRITICAL: The 'Current State' section must list every unresolved error "
+        "with its exact error message or status code. Do NOT summarize 'backend issues' — "
+        "state '404 error on /api/chat endpoint' or 'stream_run traceback at line 151'.\n"
+        "13. META-ANALYSIS: After the operational sections, include a '## Session Integrity Check' "
+        "with 4 subsections. Analyze the session's reasoning quality, not just its outcomes.\n"
+        "14. META-ANALYSIS FORMAT: Use structured templates (not narrative). Max 3 items per subsection. "
+        "Only include items grounded in observable session content — do NOT speculate beyond what the "
+        "conversation shows. If a subsection has nothing to report, write '(none)'.\n"
+        "15. META-ANALYSIS SCOPE: Focus on forward utility — what the resumed agent should watch for, "
+        "re-verify, or reconsider. Not a critique of the session, but a risk map for continuation.\n\n"
+        "OUTPUT FORMAT:\n\n"
+        "## What Was Done\n[Brief description of completed work]\n\n"
+        "## Last Session Activity\n[Describe the last 5-10 exchanges: what errors were "
+        "seen, what commands were run, what the agent was investigating. Be concrete.\n\n"
+        "## What Is Unfinished\n[Work in progress when session ended — "
+        "be specific about what is NOT yet resolved]\n\n"
+        "## Key Findings / Observations\n[Insights]\n\n"
+        "## Key Decisions\n- **[Decision]**: [Rationale]\n\n"
+        "## Current State\n[Where things stand — include unresolved issues, "
+        "errors, uncertainties]\n\n"
+        "## Immediate Next Step\n1. [The single next action for whoever resumes — "
+        "derived from Last Session Activity]\n\n"
+        "## Later Tasks\n[Post-session housekeeping: cleanup, docs, planning]\n\n"
+        "## File Operations\n[Files read/written]\n\n"
+        "## Session Integrity Check\n\n"
+        "### Working Assumptions\n"
+        "- Assumption: X. Fragile if: Y.\n"
+        "(Max 3 items. Key assumptions the current path depends on. If wrong, the direction breaks.)\n\n"
+        "### Reasoning Gaps\n"
+        "- Gap: [what was decided]. Weakness: [why the reasoning may be thin].\n"
+        "(Max 3 items. Where decisions were made on incomplete evidence or where a harder problem was evaded.)\n\n"
+        "### Known Risks & Alternatives\n"
+        "- Risk: X. Alternative considered: Y (discarded because Z).\n"
+        "(Max 3 items. Approaches considered but discarded, with rationale; risks not yet addressed.)\n\n"
+        "### Uncertainty Zones\n"
+        "- Uncertain: X. Needs verification: Y.\n"
+        "(Max 3 items. Areas where the session lacks conclusive evidence. What the resumed agent should re-check.)\n\n"
+        "Be concise. Skip empty sections. If 'What Is Unfinished' is empty, "
+        "the session truly ended cleanly.\n\n"
+        f"<conversation>\n{serialized}\n</conversation>"
+    )
+    if previous_summary:
+        prompt += f"\n\n<previous-summary>\n{previous_summary}\n</previous-summary>"
+    return prompt
+
+
 def get_minimal_prompt(serialized):
     return (
         "Summarize this conversation in 3-5 bullet points. Focus ONLY on:\n"
@@ -260,6 +336,7 @@ def get_minimal_prompt(serialized):
 STRATEGIES = {
     "pi": {"prompt": get_pi_prompt, "append_file_ops": True},
     "smart": {"prompt": get_smart_prompt, "append_file_ops": False},
+    "smart_meta": {"prompt": get_smart_meta_prompt, "append_file_ops": False},
     "minimal": {"prompt": get_minimal_prompt, "append_file_ops": False},
 }
 
