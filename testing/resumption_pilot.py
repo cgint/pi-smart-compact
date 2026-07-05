@@ -40,6 +40,9 @@ MAX_TOKENS = 4096
 DEFAULT_COMPACT_FILES = {
     "pi": SLOT2_DIR / "summary_pi.txt",
     "smart": SLOT2_DIR / "summary_smart.txt",
+    "smart_a": SLOT2_DIR / "summary_smart_a.txt",
+    "smart_b": SLOT2_DIR / "summary_smart_b.txt",
+    "smart_meta": SLOT2_DIR / "summary_smart_meta.txt",
 }
 
 # Output directory for pilot results
@@ -156,7 +159,7 @@ def main():
     )
     parser.add_argument(
         "--condition",
-        choices=["pi", "smart", "control"],
+        choices=["pi", "smart", "smart_a", "smart_b", "smart_meta", "control"],
         help="Run a single condition",
     )
     parser.add_argument(
@@ -175,6 +178,8 @@ def main():
             ("control", None),
             ("pi", DEFAULT_COMPACT_FILES["pi"]),
             ("smart", DEFAULT_COMPACT_FILES["smart"]),
+            ("smart_b", DEFAULT_COMPACT_FILES["smart_b"]),
+            ("smart_meta", DEFAULT_COMPACT_FILES["smart_meta"]),
         ]
         results = []
         for cond, comp_path in conditions:
@@ -182,7 +187,7 @@ def main():
             if result:
                 results.append(result)
         print(f"\n{'='*60}")
-        print(f"Done. {len(results)}/3 conditions completed.")
+        print(f"Done. {len(results)}/5 conditions completed.")
         print(f"Outputs: {PILOT_OUT_DIR}/")
     elif args.condition:
         comp_path = args.compaction

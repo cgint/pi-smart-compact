@@ -1,0 +1,9 @@
+{
+  "condition": "smart_a",
+  "compaction_file": "/Users/cgint/dev-external/pi-smart-compact/testing/compaction_results/--Users-cgint-dev-web-scrape-meno--/summary_smart_a.txt",
+  "prompt_length": 8706,
+  "response_length": 615,
+  "model": "qwen36-35b-nvidia-nvfp4",
+  "temperature": 0.1,
+  "response": "**Active Goal:** Complete the end-to-end test of the chat widget by sending a message via the local browser instance and verifying the streamed response appears in the UI.\n\n**Execution Step:**\nI will use the `agent-browser` tool to type a test message into the chat input field and submit it. Then, I will wait briefly for the streaming response to begin rendering and take a screenshot to verify the interaction.\n\n```json\n{\n  \"action\": \"agent_browser\",\n  \"args\": {\n    \"command\": \"type_and_submit\",\n    \"selector\": \"#chat-input\",\n    \"text\": \"Hello, how does the BM25 search work?\",\n    \"wait_seconds\": 3\n  }\n}\n```"
+}

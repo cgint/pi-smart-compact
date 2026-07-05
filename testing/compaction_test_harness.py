@@ -245,11 +245,24 @@ def get_smart_prompt(serialized, previous_summary=None):
     return prompt
 
 
-def get_smart_meta_prompt(serialized, previous_summary=None):
-    """Smart prompt + Session Integrity Check (meta-analysis layer from criticalthink pattern)."""
+def get_smart_b_prompt(serialized, previous_summary=None):
+    """Option B: Smart + meta-analysis reframed as explicit two-phase within single pass.
+
+    Key change: the meta-analysis is framed as a POST-HOC review of the already-written
+    operational sections, not a concurrent analysis of the conversation. This prevents
+    the meta-analysis goals from biasing the operational reading toward closure.
+    """
     prompt = (
         "You are a session compaction specialist.\n\n"
-        "RULES:\n"
+        "WORK IN TWO PHASES (both in one output):\n\n"
+        "PHASE 1 — OPERATIONAL SUMMARY: Read the conversation and produce the operational "
+        "summary below. Focus on what was actually discussed, done, and left unfinished.\n\n"
+        "PHASE 2 — INTEGRITY CHECK: AFTER completing Phase 1, review YOUR OWN operational "
+        "summary (not the conversation) and append a '## Session Integrity Check' that "
+        "analyzes the reasoning quality of what you just wrote. What assumptions does your "
+        "summary rest on? Where is the evidence thin? What risks or uncertainties should "
+        "the resumed agent watch for?\n\n"
+        "RULES (Phase 1 — Operational):\n"
         "1. Summarize what was ACTUALLY DISCUSSED and DONE — NOT file contents.\n"
         "2. Preserve decisions with rationale.\n"
         "3. Preserve unresolved blockers.\n"
@@ -277,15 +290,18 @@ def get_smart_meta_prompt(serialized, previous_summary=None):
         "are NOT sufficient — the resumed agent needs the exact error signatures.\n"
         "12. CRITICAL: The 'Current State' section must list every unresolved error "
         "with its exact error message or status code. Do NOT summarize 'backend issues' — "
-        "state '404 error on /api/chat endpoint' or 'stream_run traceback at line 151'.\n"
-        "13. META-ANALYSIS: After the operational sections, include a '## Session Integrity Check' "
-        "with 4 subsections. Analyze the session's reasoning quality, not just its outcomes.\n"
-        "14. META-ANALYSIS FORMAT: Use structured templates (not narrative). Max 3 items per subsection. "
-        "Only include items grounded in observable session content — do NOT speculate beyond what the "
-        "conversation shows. If a subsection has nothing to report, write '(none)'.\n"
-        "15. META-ANALYSIS SCOPE: Focus on forward utility — what the resumed agent should watch for, "
-        "re-verify, or reconsider. Not a critique of the session, but a risk map for continuation.\n\n"
-        "OUTPUT FORMAT:\n\n"
+        "state '404 error on /api/chat endpoint' or 'stream_run traceback at line 151'.\n\n"
+        "RULES (Phase 2 — Integrity Check):\n"
+        "13. Review YOUR OWN Phase 1 output (not the conversation). Identify assumptions, "
+        "gaps, risks, and uncertainties in the summary you just produced.\n"
+        "14. Use structured templates (not narrative). Max 3 items per subsection. "
+        "Only include items grounded in your Phase 1 output — do NOT speculate beyond what "
+        "the summary states. If a subsection has nothing to report, write '(none)'.\n"
+        "15. Focus on forward utility — what the resumed agent should watch for, "
+        "re-verify, or reconsider based on the operational summary.\n"
+        "16. REQUIRED: You MUST output the Session Integrity Check after the File Operations "
+        "section. Do NOT omit it. Even if all subsections are '(none)', include the section headers.\n\n"
+        "OUTPUT FORMAT (Phase 1):\n\n"
         "## What Was Done\n[Brief description of completed work]\n\n"
         "## Last Session Activity\n[Describe the last 5-10 exchanges: what errors were "
         "seen, what commands were run, what the agent was investigating. Be concrete.\n\n"
@@ -299,19 +315,20 @@ def get_smart_meta_prompt(serialized, previous_summary=None):
         "derived from Last Session Activity]\n\n"
         "## Later Tasks\n[Post-session housekeeping: cleanup, docs, planning]\n\n"
         "## File Operations\n[Files read/written]\n\n"
+        "OUTPUT FORMAT (Phase 2 — appended after Phase 1):\n\n"
         "## Session Integrity Check\n\n"
         "### Working Assumptions\n"
         "- Assumption: X. Fragile if: Y.\n"
-        "(Max 3 items. Key assumptions the current path depends on. If wrong, the direction breaks.)\n\n"
+        "(Max 3 items. Key assumptions your Phase 1 summary rests on.)\n\n"
         "### Reasoning Gaps\n"
-        "- Gap: [what was decided]. Weakness: [why the reasoning may be thin].\n"
-        "(Max 3 items. Where decisions were made on incomplete evidence or where a harder problem was evaded.)\n\n"
+        "- Gap: [what Phase 1 claims]. Weakness: [why the evidence may be thin].\n"
+        "(Max 3 items. Where Phase 1 may be overconfident or evading a harder problem.)\n\n"
         "### Known Risks & Alternatives\n"
         "- Risk: X. Alternative considered: Y (discarded because Z).\n"
-        "(Max 3 items. Approaches considered but discarded, with rationale; risks not yet addressed.)\n\n"
+        "(Max 3 items. Risks the resumed agent should watch for.)\n\n"
         "### Uncertainty Zones\n"
         "- Uncertain: X. Needs verification: Y.\n"
-        "(Max 3 items. Areas where the session lacks conclusive evidence. What the resumed agent should re-check.)\n\n"
+        "(Max 3 items. What the resumed agent should re-check before proceeding.)\n\n"
         "Be concise. Skip empty sections. If 'What Is Unfinished' is empty, "
         "the session truly ended cleanly.\n\n"
         f"<conversation>\n{serialized}\n</conversation>"
@@ -319,6 +336,41 @@ def get_smart_meta_prompt(serialized, previous_summary=None):
     if previous_summary:
         prompt += f"\n\n<previous-summary>\n{previous_summary}\n</previous-summary>"
     return prompt
+
+
+def get_smart_a_meta_prompt(operational_summary):
+    """Option A, Pass 2: Generate ONLY the Session Integrity Check from an operational summary.
+
+    The model receives the operational summary and outputs ONLY the integrity check
+    section. The parent concatenates pass 1 + pass 2. No overlap, no rewriting risk.
+    """
+    return (
+        "You are a session analysis specialist. Below is a compaction summary of a "
+        "previous session.\n\n"
+        "Your task: Output ONLY a '## Session Integrity Check' section that analyzes "
+        "the reasoning quality of this summary. Do NOT repeat or modify the summary.\n\n"
+        "RULES:\n"
+        "1. Review the PROVIDED summary. Identify assumptions, gaps, risks, and "
+        "uncertainties in what was written.\n"
+        "2. Use structured templates (not narrative). Max 3 items per subsection.\n"
+        "3. Only include items grounded in the provided summary — do NOT speculate beyond "
+        "what the summary states. If a subsection has nothing to report, write '(none)'.\n"
+        "4. Focus on forward utility — what a resumed agent should watch for, "
+        "re-verify, or reconsider.\n"
+        "5. Output ONLY the Session Integrity Check section. Do NOT include any other "
+        "content. Do NOT repeat the summary.\n\n"
+        "FORMAT:\n\n"
+        "## Session Integrity Check\n\n"
+        "### Working Assumptions\n"
+        "- Assumption: X. Fragile if: Y.\n\n"
+        "### Reasoning Gaps\n"
+        "- Gap: [what the summary claims]. Weakness: [why evidence may be thin].\n\n"
+        "### Known Risks & Alternatives\n"
+        "- Risk: X. Alternative considered: Y (discarded because Z).\n\n"
+        "### Uncertainty Zones\n"
+        "- Uncertain: X. Needs verification: Y.\n\n"
+        f"--- SUMMARY TO REVIEW ---\n{operational_summary}\n--- END SUMMARY ---"
+    )
 
 
 def get_minimal_prompt(serialized):
@@ -336,7 +388,8 @@ def get_minimal_prompt(serialized):
 STRATEGIES = {
     "pi": {"prompt": get_pi_prompt, "append_file_ops": True},
     "smart": {"prompt": get_smart_prompt, "append_file_ops": False},
-    "smart_meta": {"prompt": get_smart_meta_prompt, "append_file_ops": False},
+    "smart_b": {"prompt": get_smart_b_prompt, "append_file_ops": False},
+    "smart_a": {"prompt": get_smart_prompt, "pass2_prompt": get_smart_a_meta_prompt, "append_file_ops": False, "two_pass": True},
     "minimal": {"prompt": get_minimal_prompt, "append_file_ops": False},
 }
 
@@ -474,13 +527,32 @@ def run():
 
             try:
                 summary = call_llm(prompt)
+
+                # Two-pass: feed operational summary through meta-analysis
+                two_pass = strat_cfg.get("two_pass", False)
+                if two_pass and not args.skip_llm:
+                    pass2_fn = strat_cfg.get("pass2_prompt")
+                    if pass2_fn:
+                        operational = summary  # pass 1 output
+                        (sess_out / f"summary_{strat}_pass1.txt").write_text(operational, encoding="utf-8")
+                        print(f"  [{strat}-meta] ", end="", flush=True)
+                        pass2_prompt = pass2_fn(operational)
+                        (sess_out / f"prompt_{strat}_pass2.txt").write_text(pass2_prompt, encoding="utf-8")
+                        try:
+                            meta_check = call_llm(pass2_prompt)
+                            summary = operational + "\n\n" + meta_check  # concatenate
+                            print(f"OK (2-pass, {len(summary)} chars)")
+                        except Exception as e2:
+                            print(f"PASS2 ERROR: {e2}, using pass 1 only", file=sys.stderr)
+
                 # Append file operations only if the strategy opts in
                 if append_ops and file_ops_suffix:
                     summary += file_ops_suffix
                 (sess_out / f"summary_{strat}.txt").write_text(summary, encoding="utf-8")
                 sc = score_summary(summary)
                 sc.strategy = strat
-                print(f"OK ({sc.summary_length} chars, {sc.word_count} words)")
+                if not two_pass:
+                    print(f"OK ({sc.summary_length} chars, {sc.word_count} words)")
                 sess_results[strat] = {"summary": summary, "scorecard": sc}
             except Exception as e:
                 print(f"ERROR: {e}", file=sys.stderr)

@@ -1,0 +1,9 @@
+{
+  "condition": "smart_b",
+  "compaction_file": "/Users/cgint/dev-external/pi-smart-compact/testing/compaction_results/--Users-cgint-dev-web-scrape-meno--/summary_smart_b.txt",
+  "prompt_length": 7575,
+  "response_length": 439,
+  "model": "qwen36-35b-nvidia-nvfp4",
+  "temperature": 0.1,
+  "response": "**Active Goal:** Verify the end-to-end chat functionality by confirming the backend returns a valid response to a test message.\n\n**Execution Step:**\nSend a test message via `curl` to the local backend's `/api/chat-rag` endpoint to verify the SSE stream and check for server-side errors.\n\n```bash\ncurl -N -X POST \"http://127.0.0.1:8080/api/chat-rag\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"Hello, this is a test.\"}'\n```"
+}
