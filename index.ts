@@ -6,7 +6,6 @@ import { complete } from "@earendil-works/pi-ai/compat";
 import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-agent";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-console.log("[pi-smart-compact] Module loaded, __dirname:", __dirname);
 
 /**
  * Load the compaction prompt from the markdown file at startup.
@@ -16,7 +15,6 @@ function loadPrompt(): string | null {
   const probePath = join(__dirname, "findings", "DRAFT_COMPACTION_PROMPT.md");
   try {
     const content = readFileSync(probePath, "utf-8");
-    console.log("[pi-smart-compact] Prompt loaded at startup:", content.length, "chars");
     return content;
   } catch (err: any) {
     console.warn("[pi-smart-compact] Failed to load prompt:", err.message);
@@ -26,8 +24,6 @@ function loadPrompt(): string | null {
 
 export default function register(pi: ExtensionAPI): void {
   try {
-    console.log("[pi-smart-compact] register() called");
-
     const customPrompt = loadPrompt();
     if (!customPrompt) {
       console.warn("[pi-smart-compact] No prompt loaded, compaction interception disabled");
@@ -35,8 +31,6 @@ export default function register(pi: ExtensionAPI): void {
     }
 
     pi.on("session_before_compact", async (event, ctx) => {
-      console.log("[pi-smart-compact] session_before_compact fired, reason:", event.reason);
-
       const { preparation, signal } = event;
       const { messagesToSummarize, turnPrefixMessages, firstKeptEntryId, previousSummary, tokensBefore } = preparation;
 
@@ -46,7 +40,6 @@ export default function register(pi: ExtensionAPI): void {
         console.warn("[pi-smart-compact] No current model available, falling back to Pi's default");
         return;
       }
-      console.log("[pi-smart-compact] Using model:", model.id, "from provider:", model.provider);
 
       // Resolve auth via Pi's model registry (handles models.json, env vars, etc.)
       const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -62,11 +55,8 @@ export default function register(pi: ExtensionAPI): void {
       // Combine all messages for summarization
       const allMessages = [...messagesToSummarize, ...turnPrefixMessages];
       if (allMessages.length === 0) {
-        console.log("[pi-smart-compact] No messages to summarize");
         return;
       }
-
-      console.log("[pi-smart-compact] Summarizing", allMessages.length, "messages,", tokensBefore.toLocaleString(), "tokens");
 
       // Convert messages to LLM format and serialize
       const llmMessages = convertToLlm(allMessages);
@@ -130,7 +120,6 @@ ${customPrompt}`,
           return;
         }
 
-        console.log("[pi-smart-compact] Generated summary:", summary.length, "chars");
         return {
           compaction: {
             summary,
@@ -144,8 +133,6 @@ ${customPrompt}`,
         return;
       }
     });
-
-    console.log("[pi-smart-compact] Registered session_before_compact handler");
   } catch (err) {
     console.error("[pi-smart-compact] register() crashed:", err);
   }
