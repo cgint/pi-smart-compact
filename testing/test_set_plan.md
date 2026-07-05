@@ -68,7 +68,7 @@ Gold standards written for all 4 sessions:
 - `testing/evaluation_slot_3-discuss-mode-extension.md` — structural negotiation, tri-state design
 - `testing/evaluation_slot_4-web-scrape-deploy.md` — infra debates, OpenSpec refinement, critical requirements
 
-### Step 5: Review gold standards (TODO — awaiting user review)
+### Step 5: Review gold standards (DONE — see `testing/gold_standard_critique.md`)
 
 Before running the harness, review all 4 gold standards against the rubric to ensure they represent truly optimal compactions. Key concerns:
 - Do they preserve decisions with rationale?

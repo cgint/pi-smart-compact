@@ -74,7 +74,7 @@ This supports low-noise operation without cutting the agent off from source deta
 ## Source evidence
 
 - `../../pi-supervisor-guide/SCENARIO_NOTES.md` — sections `Cross-scenario assessment`, `Key findings`, and `Simple judge prototype update`; source for observable event traces, compact judge inputs, evidence IDs, and heuristic caveats.
-- `../../decision-context-traces/CURRENT_STATE.md` — sections `What the system is`, `Completed`, `Coverage Metrics`, and `Held-out evaluation set`; source for ContextTrace/DecisionTrace, reviewability artifacts, representation metrics, and held-out evaluation.
-- `../../decision-context-traces/agent/docs-papers-map.md` — sections `Core synthesis`, `Critical interpretation for this project`, and `Critical risks`; source for representation layer framing and risk controls.
-- `../../decision-context-traces/README.md` — section `The Intelligence Pipeline`; source for event extraction → reasoning traces → pattern synthesis.
-- `../../decision-context-agent/README.md` — sections `The Core Problem & Solution` and `Technical Architecture`; source for emergent schema and pattern synthesis framing.
+- `../../../decision-context-traces/CURRENT_STATE.md` — sections `What the system is`, `Completed`, `Coverage Metrics`, and `Held-out evaluation set`; source for ContextTrace/DecisionTrace, reviewability artifacts, representation metrics, and held-out evaluation.
+- `../../../decision-context-traces/agent/docs-papers-map.md` — sections `Core synthesis`, `Critical interpretation for this project`, and `Critical risks`; source for representation layer framing and risk controls.
+- `../../../decision-context-traces/README.md` — section `The Intelligence Pipeline`; source for event extraction → reasoning traces → pattern synthesis.
+- `../../../decision-context-agent/README.md` — sections `The Core Problem & Solution` and `Technical Architecture`; source for emergent schema and pattern synthesis framing.

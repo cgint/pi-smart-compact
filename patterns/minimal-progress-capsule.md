@@ -84,4 +84,4 @@ source_evidence:
 - `../../pi-sessions-replace-driver/work/session-signal-system.md` — section `Implemented verifier angle: minimal_progress_context`; source for capsule fields, minimality rule, and insufficiency signal.
 - `../../pi-sessions-replace-driver/work/session-signal-system.md` — section `Verifier output`; source for artifact-rich verifier output and lightweight evidence pointers.
 - `../../pi-sessions-replace-driver/AGENTS.md` — sections `GOAL` and `Main strategies`; source for minimal high-signal interventions and using files for durable knowledge.
-- `../../decision-context-traces/CURRENT_STATE.md` — section `Held-out evaluation set`; source for treating compact context as something that should be evaluated against task usefulness rather than accepted by appearance.
+- `../../../decision-context-traces/CURRENT_STATE.md` — section `Held-out evaluation set`; source for treating compact context as something that should be evaluated against task usefulness rather than accepted by appearance.

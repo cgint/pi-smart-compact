@@ -94,4 +94,4 @@ Constraints: <short bullets>
 - `../../pi-sessions-replace-driver/work/session-signal-system.md` — sections `Verifier output`, `Implemented watcher shape`, and `Notes`; source for rich verifier artifacts plus smaller in-band interventions.
 - `../../pi-self-reflect/docs/steering-feedback-tree-check.md` — sections `What was good about the steering`, `What was weak or risky`, and `Design conclusions from the steering`; source for branch/session-state separation and out-of-band reflection.
 - `../../pi-sessions-replace-driver/AGENTS.md` — sections `Working agreement` and `Main strategies`; source for using chat context as control flow and files as durable knowledge.
-- `../../decision-context-traces/agent/docs-papers-map.md` — sections `GAM — General Agentic Memory` and `Critical risks`; source for preserving history and retrieving/compiling just-in-time rather than over-compressing early.
+- `../../../decision-context-traces/agent/docs-papers-map.md` — sections `GAM — General Agentic Memory` and `Critical risks`; source for preserving history and retrieving/compiling just-in-time rather than over-compressing early.

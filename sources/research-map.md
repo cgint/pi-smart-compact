@@ -12,10 +12,10 @@ Initial source map for compaction-relevant material. Coverage is intentionally f
 | `../../pi-sessions-replace-driver/work/session-signal-system.md` | Covered initial | JSONL session watching; compact contract checking; async verifier cadence; six verifier angles; `minimal_progress_context`; artifact-rich/out-of-band detail with tiny in-band interventions. | `../patterns/minimal-progress-capsule.md`, `../concepts/context-pointers.md` |
 | `../../pi-self-reflect/docs/steering-feedback-tree-check.md` | Covered initial | Pi `/tree` as prior art; branch summaries; context rebuild; out-of-band reflection; avoid polluting active session leaf; sidecar session isolation. | `../concepts/context-pointers.md`, `../concepts/compaction-principles.md` |
 | `../../pi-supervisor-guide/SCENARIO_NOTES.md` | Covered initial | Observable event traces; compact judge input; evidence IDs; heuristic caveats; assistant-message previews; facts separate from findings. | `../patterns/evidence-linked-traces.md` |
-| `../../decision-context-traces/CURRENT_STATE.md` | Covered initial | ContextTrace/Physics vs DecisionTrace/Cognition; representation before optimization; minimal context packs; pattern lift; compaction metrics; held-out evaluation. | `../concepts/compaction-principles.md`, `../patterns/evidence-linked-traces.md` |
-| `../../decision-context-traces/agent/docs-papers-map.md` | Covered initial | Papers/docs synthesis; representation layer; risks: hallucinated rationale, proxy hacking, premature ontology, over-compression, decision inflation, no outcome link. | `../concepts/compaction-principles.md`, `../patterns/evidence-linked-traces.md` |
-| `../../decision-context-traces/README.md` | Covered initial | Three-stage pipeline: event extraction, reasoning traces, pattern synthesis; compound engineering framing. | `../patterns/evidence-linked-traces.md` |
-| `../../decision-context-agent/README.md` | Covered initial | Emergent schema from trajectories; event extraction → reasoning traces → pattern synthesis; RLM-PoT as deterministic dataset coverage. | `../patterns/evidence-linked-traces.md` |
+| `../../../decision-context-traces/CURRENT_STATE.md` | Covered initial | ContextTrace/Physics vs DecisionTrace/Cognition; representation before optimization; minimal context packs; pattern lift; compaction metrics; held-out evaluation. | `../concepts/compaction-principles.md`, `../patterns/evidence-linked-traces.md` |
+| `../../../decision-context-traces/agent/docs-papers-map.md` | Covered initial | Papers/docs synthesis; representation layer; risks: hallucinated rationale, proxy hacking, premature ontology, over-compression, decision inflation, no outcome link. | `../concepts/compaction-principles.md`, `../patterns/evidence-linked-traces.md` |
+| `../../../decision-context-traces/README.md` | Covered initial | Three-stage pipeline: event extraction, reasoning traces, pattern synthesis; compound engineering framing. | `../patterns/evidence-linked-traces.md` |
+| `../../../decision-context-agent/README.md` | Covered initial | Emergent schema from trajectories; event extraction → reasoning traces → pattern synthesis; RLM-PoT as deterministic dataset coverage. | `../patterns/evidence-linked-traces.md` |
 | `../../pi-subagent-coordinator/agent/delegation-handoff-research.md` | Covered initial | Handoff as transfer of authority, responsibility, context, constraints, verification criteria; Verification Tax; confidence and comprehension checks. | `../patterns/handoff-context-brief.md` |
 | `../../pi-subagent-coordinator/agent/coordinator-strategy-experiment-003-results.md` | Covered initial | Measured coordinator overhead; improved handoff quality; routing rule for baseline vs coordinator. | `../patterns/handoff-context-brief.md`, `../concepts/budget-and-storage-aware-compaction.md` |
 | `../../pi-subagent-coordinator/agent/coverage.md` | Covered initial | Evidence matrix and experiment artifacts for coordinator work. | `../patterns/handoff-context-brief.md`, `../status/coverage.md` |
@@ -39,8 +39,8 @@ Initial source map for compaction-relevant material. Coverage is intentionally f
 | `../../pi-subagent-coordinator` | Covered initial | Handoff compaction, Verification Tax, confidence/comprehension checks, token/cost tradeoffs. |
 | `../../pi-subagent-coordinator-playgrounds` | Referenced only | Evidence artifacts are referenced by coordinator docs but not directly inspected. |
 | `../../pi-supervisor-guide` | Covered initial | Focused read of scenario validation and compact judge input pattern. |
-| `../../decision-context-agent` | Covered initial | README-level coverage only. |
-| `../../decision-context-traces` | Covered initial | Core trace-v2 and paper-map files covered. |
+| `../../../decision-context-agent` | Covered initial | README-level coverage only. |
+| `../../../decision-context-traces` | Covered initial | Core trace-v2 and paper-map files covered. |
 
 ## Extraction rule
 
