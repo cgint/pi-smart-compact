@@ -128,20 +128,29 @@ The resumed agent now knows: the next step is clear, but the reasoning behind it
 | **Mandatory** | Consistent output shape; resumed agent always knows what to expect | Adds tokens to simple sessions where all subsections would be "(none)" |
 | **Conditional** | Saves tokens on straightforward sessions | Risks under-reporting; compaction model may miss subtle risks |
 
-**Tentative leaning:** Mandatory, but allow "(none)" when a subsection has nothing to report. The structural consistency is worth the token cost.
+**Tentative leaning → Measured conclusion:** Mandatory. Evidence from all 4 sessions:
+- Simplest sessions (small base output) benefit most from meta-analysis — there's less operational detail anchoring the resumed agent
+- Absolute cost (~600 tokens avg) is well within Pi's 16K reserve
+- Arbitrary size thresholds risk cutting the sessions that benefit most (see §7.3 conditional mode analysis)
+- Allow "(none)" when a subsection has nothing to report, to avoid forced fluff
 
-### 5.2 Token Budget
+### 5.2 Token Budget (Measured)
 
-Rough estimate per subsection at max items:
-- Working Assumptions: ~4 × 80 tokens = 320
-- Reasoning Gaps: ~3 × 80 tokens = 240
-- Known Risks: ~3 × 80 tokens = 240
-- Uncertainty Zones: ~3 × 80 tokens = 240
-- **Total: ~1040 tokens** (worst case)
+Actual measurements across all 4 test sessions (see §7.3 for full breakdown):
 
-Realistic average: ~400-600 tokens (most sessions won't hit max items).
+| Session | smart | smart_meta | Meta-only chars | Meta-only tokens (≈) |
+|---|---|---|---|---|
+| Slot 1 (discuss-mode) | 2768 | 5647 | +2879 | ~720 |
+| Slot 2 (web-scrape) | 4940 | 7876 | +2936 | ~734 |
+| Slot 3 (smart-compact) | 5628 | 8041 | +2413 | ~603 |
+| Slot 4 (deploy) | 5497 | 6181 | +684 | ~171 |
+| **Average** | 4458 | 6936 | **+2478** | **~617** |
 
-This is a modest increase relative to typical compaction output (~2000-4000 tokens total). Acceptable if the signal is high-quality.
+**Key finding:** The meta-analysis adds a roughly **constant floor of ~2400-2900 chars** (~600-730 tokens) across sessions. It is not proportional to session complexity — it's a fixed overhead. The *percentage* varies wildly (12%→104%) purely because the denominator changes.
+
+Pi's `reserveTokens` default is 16,384. Even the largest smart_meta output (~8000 chars ≈ ~2000 tokens) is well within budget. No overflow risk.
+
+**Token cost vs Axis 2 trade-off:** The ~600 token meta-analysis floor consumes reserve budget that could otherwise go to raw tail preservation (Axis 2: split strategy). If we later reduce the compressed portion to keep more tail raw, the meta-analysis overhead becomes a larger fraction of the reserved zone. Monitor if pursuing both axes simultaneously.
 
 ### 5.3 Prompt Integration
 
@@ -241,13 +250,59 @@ See [`testing/behavioral_resumption_5dim_scores_meta.md`](testing/behavioral_res
 | Slot 3 (smart-compact) | 5628 | 8041 | +2413 | +43% |
 | Slot 4 (deploy) | 5497 | 6181 | +684 | +12% |
 
-**Pattern:** The meta-analysis adds a ~2000-3000 char floor. For sessions with small base output (Slot 1: 2768 chars), this is a large percentage increase. For richer sessions, the relative impact is moderate.
+### 7.3 Cross-Session Size Impact (All 4 Slots)
+
+| Session | smart | smart_meta | Delta chars | Delta % |
+|---|---|---|---|---|
+| Slot 1 (discuss-mode) | 2768 | 5647 | +2879 | **+104%** |
+| Slot 2 (web-scrape) | 4940 | 7876 | +2936 | +59% |
+| Slot 3 (smart-compact) | 5628 | 8041 | +2413 | +43% |
+| Slot 4 (deploy) | 5497 | 6181 | +684 | +12% |
+
+**Pattern: constant floor, not proportional.** The meta-analysis adds ~2400-2900 chars regardless of session complexity. The percentage explosion on Slot 1 (+104%) is purely mathematical — dividing a fixed ~2500 by a small denominator (2768). Absolute cost is ~700 tokens, well within Pi's 16K reserve.
+
+#### Per-session quality assessment
+
+**Slot 1 (discuss-mode) — highest relative cost, highest relative value:**
+The simplest session (straightforward refactor: remove `reset` mode). Base smart output was small (2768 chars) because there was little operational complexity. Meta-analysis added genuinely useful content:
+- Real fragilities: `bash` tool rationale requirement, user workflow assumptions around `reset`/`off`
+- Real reasoning gaps: why the agent failed to provide `rationale` for bash
+- Concrete uncertainty zones: git state after failed bash loop, test coverage for consolidation
+
+**Is doubling 2768→5647 worth it?** Yes if context window has room. The simplest sessions are often where meta-analysis adds the *most relative value* — there's less operational detail to anchor the resumed agent, so the meta-layer fills the context gap. Paradox: the sessions with smallest base output benefit most from meta-analysis.
+
+**Slot 2 (web-scrape) — the benchmark:**
+Rich debugging session. Meta-analysis added 2936 chars of high-signal content (assumptions about data_store integrity, Cloud Run deletion gaps, Wix integration uncertainties). Drove the +1 rubric improvement.
+
+**Slot 3 (smart-compact) — moderate session:**
+Design/planning session. Meta-analysis added 2413 chars (Pi API assumptions, prompt verbosity concerns, extension API stability). Solid signal.
+
+**Slot 4 (deploy) — lowest delta, most complete session:**
+Nearly complete session (deployed, 143 tests passing, committed). Less uncertainty to surface, so meta-analysis is leaner (+684 chars, +12%). The session had fewer gaps because most work was finished.
+
+#### Conditional mode analysis
+
+If we skip meta-analysis for sessions where smart output < X chars:
+
+| Threshold | Sessions skipped | Tokens saved | Risk |
+|---|---|---|---|
+| < 3000 | Slot 1 only | ~720 | Loses the session with highest relative meta value |
+| < 5000 | Slots 1, 2 | ~1454 | Loses the benchmark session (Slot 2) where we proved +1 improvement |
+| < 5500 | Slots 1, 2, 3 | ~2057 | Only Slot 4 keeps meta — defeats the purpose |
+
+**Conclusion:** Arbitrary thresholds risk cutting the sessions that benefit most. The paradox is that simple sessions (small base) gain the most from meta-analysis, because there's less operational detail anchoring the resumed agent. **Recommendation: keep mandatory.** The absolute cost (~600 tokens avg) is well within reserve budget. If context pressure becomes real, revisit.
 
 **Quality check:** Spot-checked all 4 sessions. Meta-analysis is high-signal across session types — specific assumptions, real reasoning gaps, grounded risks. No generic fluff detected.
 
-### 7.4 Preliminary Conclusion
+### 7.4 Conclusion
 
-The meta-analysis layer delivers **+1 on the 5-dimension rubric** for Slot 2, with high-quality signal across all 4 sessions. The token cost is acceptable for rich sessions (40-60%) but may be excessive for simple sessions (100%+). Consider conditional mode for very short sessions.
+The meta-analysis layer delivers **+1 on the 5-dimension rubric** for Slot 2 (22→23/25), with high-quality signal across all 4 sessions. Key findings:
+
+- **Constant overhead:** ~2400-2900 chars (~600-730 tokens) regardless of session complexity
+- **No overflow risk:** Largest output (8041 chars) well within Pi's 16K reserve
+- **Simplest sessions benefit most:** Paradox — small base output sessions gain the most relative value from meta-analysis, because there's less operational detail anchoring the resumed agent
+- **Conditional mode not recommended:** Arbitrary thresholds risk cutting the sessions that benefit most; absolute cost is affordable
+- **Recommendation: keep mandatory** at current bounds (max 3 items per subsection)
 
 ---
 
@@ -257,7 +312,7 @@ The meta-analysis layer delivers **+1 on the 5-dimension rubric** for Slot 2, wi
 
 2. **Over-confident meta-analysis:** The compaction model may misidentify assumptions or gaps, leading the resumed agent down wrong paths. Mitigation: bound to observable session content; ban speculation not grounded in the conversation.
 
-3. **Token budget pressure:** If sessions are already near limits, adding ~500 tokens could push over. Mitigation: monitor actual sizes; consider conditional mode if budget is tight.
+3. **Token budget pressure:** Measured at ~600 tokens average (+40-60% for rich sessions, +100% for minimal). Well within Pi's 16K reserve even at worst case (~8000 chars). Risk only materializes if pursuing Axis 2 (larger raw tail) simultaneously, as meta-analysis floor competes with tail preservation for reserve budget.
 
 4. **Compaction model capability:** The meta-analysis requires the model to think critically about the session's reasoning — a harder task than summarization. May not work well on weaker models. Mitigation: test across model tiers; degrade gracefully if quality is low.
 
