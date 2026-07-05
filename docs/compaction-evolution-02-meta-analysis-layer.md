@@ -141,10 +141,10 @@ Actual measurements across all 4 test sessions (see §7.3 for full breakdown):
 | Session | smart | smart_meta | Meta-only chars | Meta-only tokens (≈) |
 |---|---|---|---|---|
 | Slot 1 (discuss-mode) | 2768 | 5647 | +2879 | ~720 |
-| Slot 2 (web-scrape) | 4940 | 7876 | +2936 | ~734 |
-| Slot 3 (smart-compact) | 5628 | 8041 | +2413 | ~603 |
+| Slot 2 (web-scrape) | 4944 | 7882 | +2938 | ~735 |
+| Slot 3 (smart-compact) | 5628 | 8045 | +2417 | ~604 |
 | Slot 4 (deploy) | 5497 | 6181 | +684 | ~171 |
-| **Average** | 4458 | 6936 | **+2478** | **~617** |
+| **Average** | 4459 | 6940 | **+2481** | **~620** |
 
 **Key finding:** The meta-analysis adds a roughly **constant floor of ~2400-2900 chars** (~600-730 tokens) across sessions. It is not proportional to session complexity — it's a fixed overhead. The *percentage* varies wildly (12%→104%) purely because the denominator changes.
 
@@ -223,7 +223,7 @@ The compaction prompt (`testing/compaction_test_prompt.md`) needs:
 
 | Metric | smart | smart_meta | Delta |
 |---|---|---|---|
-| Chars | 5053 | 6957 | +1904 (+38%) |
+| Chars | 4944 | 7882 | +2938 (+59%) |
 | Words | 648 | 941 | +293 (+45%) |
 
 ### 7.2 5-Dimension Scores (Slot 2)
@@ -246,17 +246,8 @@ See [`testing/behavioral_resumption_5dim_scores_meta.md`](testing/behavioral_res
 | Session | smart | smart_meta | Delta chars | Delta % |
 |---|---|---|---|---|
 | Slot 1 (discuss-mode) | 2768 | 5647 | +2879 | **+104%** |
-| Slot 2 (web-scrape) | 4940 | 7876 | +2936 | +59% |
-| Slot 3 (smart-compact) | 5628 | 8041 | +2413 | +43% |
-| Slot 4 (deploy) | 5497 | 6181 | +684 | +12% |
-
-### 7.3 Cross-Session Size Impact (All 4 Slots)
-
-| Session | smart | smart_meta | Delta chars | Delta % |
-|---|---|---|---|---|
-| Slot 1 (discuss-mode) | 2768 | 5647 | +2879 | **+104%** |
-| Slot 2 (web-scrape) | 4940 | 7876 | +2936 | +59% |
-| Slot 3 (smart-compact) | 5628 | 8041 | +2413 | +43% |
+| Slot 2 (web-scrape) | 4944 | 7882 | +2938 | +59% |
+| Slot 3 (smart-compact) | 5628 | 8045 | +2417 | +43% |
 | Slot 4 (deploy) | 5497 | 6181 | +684 | +12% |
 
 **Pattern: constant floor, not proportional.** The meta-analysis adds ~2400-2900 chars regardless of session complexity. The percentage explosion on Slot 1 (+104%) is purely mathematical — dividing a fixed ~2500 by a small denominator (2768). Absolute cost is ~700 tokens, well within Pi's 16K reserve.
@@ -272,10 +263,10 @@ The simplest session (straightforward refactor: remove `reset` mode). Base smart
 **Is doubling 2768→5647 worth it?** Yes if context window has room. The simplest sessions are often where meta-analysis adds the *most relative value* — there's less operational detail to anchor the resumed agent, so the meta-layer fills the context gap. Paradox: the sessions with smallest base output benefit most from meta-analysis.
 
 **Slot 2 (web-scrape) — the benchmark:**
-Rich debugging session. Meta-analysis added 2936 chars of high-signal content (assumptions about data_store integrity, Cloud Run deletion gaps, Wix integration uncertainties). Drove the +1 rubric improvement.
+Rich debugging session. Meta-analysis added 2938 chars of high-signal content (assumptions about data_store integrity, Cloud Run deletion gaps, Wix integration uncertainties). Drove the +1 rubric improvement.
 
 **Slot 3 (smart-compact) — moderate session:**
-Design/planning session. Meta-analysis added 2413 chars (Pi API assumptions, prompt verbosity concerns, extension API stability). Solid signal.
+Design/planning session. Meta-analysis added 2417 chars (Pi API assumptions, prompt verbosity concerns, extension API stability). Solid signal.
 
 **Slot 4 (deploy) — lowest delta, most complete session:**
 Nearly complete session (deployed, 143 tests passing, committed). Less uncertainty to surface, so meta-analysis is leaner (+684 chars, +12%). The session had fewer gaps because most work was finished.
@@ -294,15 +285,15 @@ If we skip meta-analysis for sessions where smart output < X chars:
 
 **Quality check:** Spot-checked all 4 sessions. Meta-analysis is high-signal across session types — specific assumptions, real reasoning gaps, grounded risks. No generic fluff detected.
 
-### 7.5 Competitive context: smart_meta vs Pi
+### 7.4 Competitive context: smart_meta vs Pi
 
 The real benchmark is Pi, not smart. Compared to Pi's output:
 
 | Session | pi | smart | smart_meta | smart_meta vs pi |
 |---|---|---|---|---|
 | Slot 1 (discuss-mode) | 4554 | 2768 | 5647 | **+1093** |
-| Slot 2 (smart-compact) | 7684 | 5628 | 8045 | +361 |
-| Slot 3 (web-scrape) | 5029 | 4944 | 7882 | +2853 |
+| Slot 2 (web-scrape) | 5029 | 4944 | 7882 | +2853 |
+| Slot 3 (smart-compact) | 7684 | 5628 | 8045 | +361 |
 | Slot 4 (deploy) | 8836 | 5497 | 6181 | **-2655** |
 | **AVG** | **6525** | **4709** | **6938** | **+413 (+6%)** |
 
@@ -310,7 +301,7 @@ The real benchmark is Pi, not smart. Compared to Pi's output:
 
 **Perspective:** smart was intentionally lean (4709 avg, -28% vs Pi). Adding meta-analysis brings us to roughly Pi's size (6938 vs 6525) while delivering +1 rubric improvement. We're trading ~6% more tokens for measurable quality gain — that's a good deal.
 
-### 7.4 Conclusion
+### 7.5 Conclusion
 
 The meta-analysis layer delivers **+1 on the 5-dimension rubric** for Slot 2 (22→23/25), with high-quality signal across all 4 sessions. Key findings:
 
