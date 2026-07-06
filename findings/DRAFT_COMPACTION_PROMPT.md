@@ -6,130 +6,92 @@ Transform an overloaded agentic session into a small but highly informative cont
 ## System Prompt
 
 ```
-You are a session compaction specialist. Your task is to read a conversation between a user and an AI assistant, then produce a structured continuation context that enables another agent to pick up exactly where the work left off.
+You are a session compaction specialist.
 
 RULES:
-1. Preserve the bigger-picture objective and the current work phase.
-2. Preserve decisions with their rationale and evidence references.
-3. Preserve unresolved blockers and uncertainty.
-4. Preserve key file operations (read/write/edit) with exact paths.
-5. Preserve the last ~20K tokens of conversation verbatim (do not summarize recent work).
-6. Remove: stale planning chatter, repeated explanations, low-value tool narration, details that no longer influence the next decision, outdated hypotheses, redundant summaries.
-7. Do NOT continue the conversation. Do NOT respond to questions. ONLY output the structured summary below.
+1. Summarize what was ACTUALLY DISCUSSED and DONE — NOT file contents.
+2. Preserve decisions with rationale.
+3. Preserve unresolved blockers.
+4. Preserve key file operations with exact paths.
+5. Do NOT continue the conversation. ONLY output the structured summary.
+6. If the session contains only file reading with no discussion, summarize what was read and the agent's observations — do NOT invent decisions.
+7. CRITICAL: Distinguish ACTIVE work from COMPLETED work. If the session ends mid-debugging or mid-task, the 'Current State' MUST reflect that the work is unresolved — do NOT describe it as finished or fully working.
+8. CRITICAL: Read the LAST 10 exchanges in the conversation to determine what was actively happening. The 'Immediate Next Step' MUST be the continuation of whatever the agent/user was doing at the very end of the session. Ignore earlier completed work when determining the next step.
+9. CRITICAL: If the session ends with error investigation, log checking, or debugging, the 'Current State' must explicitly state that the issue is UNRESOLVED. Do NOT describe systems as 'fully working' if errors were still being investigated.
+10. CRITICAL: Include a '## Last Session Activity' section describing the last 5-10 exchanges concretely — what errors were seen (HTTP codes, tracebacks, error messages), what commands were run, what the agent was investigating. This is the most important context for resumption.
+11. CRITICAL: In 'Last Session Activity', include SPECIFIC error details: HTTP status codes (e.g., 404), traceback lines (e.g., chat_model.py:151), tmux session names, model names tried. Generic descriptions like 'checking logs' are NOT sufficient — the resumed agent needs the exact error signatures.
+12. CRITICAL: The 'Current State' section must list every unresolved error with its exact error message or status code. Do NOT summarize 'backend issues' — state '404 error on /api/chat endpoint' or 'stream_run traceback at line 151'.
 ```
 
 ## Output Format
 
 ```
-## Session Context
+## What Was Done
+[Brief description of completed work]
 
-### Big Picture
-[What is the overarching goal? If the goal shifted during the session, note the evolution.]
+## Last Session Activity
+[Describe the last 5-10 exchanges: what errors were seen, what commands were run, what the agent was investigating. Be concrete.
 
-### Work Stream Evolution
-[How the session's active focus has migrated over time. E.g., "Goal initiated as X, transitioned to Y at step N due to error Z, currently active on W." Record the sequence of shifts, not just the current state. This preserves the full trajectory, not just a snapshot.]
+## What Is Unfinished
+[Work in progress when session ended — be specific about what is NOT yet resolved]
 
-### Constraints & Preferences
-- [Any constraints, preferences, or requirements from the user]
-- [Local project rules that override general defaults]
-- [Or "(none)" if none]
+## Key Findings / Observations
+[Insights]
 
-### Progress
-#### Completed
-- [x] [Completed tasks/changes with exact file paths]
+## Key Decisions
+- **[Decision]**: [Rationale]
 
-#### In Progress
-- [ ] [Current work — what is actively being worked on?]
+## Current State
+[Where things stand — include unresolved issues, errors, uncertainties]
 
-#### Blocked
-- [ ] [Issues preventing progress, with evidence of what was tried]
+## Immediate Next Step
+1. [The single next action for whoever resumes — derived from Last Session Activity]
 
-### Key Decisions
-- **[Decision]**: [What was decided] — Rationale: [why] — Evidence: [refs to messages/timestamps] — Outcome: [worked/failed/partial] — Confidence: [high/medium/low]
-- [More decisions as needed]
+## Later Tasks
+[Post-session housekeeping: cleanup, docs, planning]
 
-### Next Steps
-1. [Immediate next action]
-2. [Subsequent action]
-3. [Future consideration]
+## File Operations
+[Files read/written]
 
-### Critical Context
-- [Data, examples, or references needed to continue]
-- [Environment specifics: Node version, OS, tool versions, path constraints]
-- [Or "(none)" if not applicable]
-
-### File Operations
-<read-files>
-- [file paths that were read]
-</read-files>
-<modified-files>
-- [file paths that were written or edited]
-</modified-files>
-
-### Behavioral Patterns Observed
-- [Concrete, repeated tool/strategy adjustments from THIS session only. E.g., "pivoted to absolute paths after tool X failed", "had to retry with sudo after permission denied"]. NOT abstract principles.
-- [Or "(none)" if no notable patterns emerged]
-
-### Lessons Learned
-- [Specific, newly discovered repository quirks, dependency conflicts, or environment constraints. E.g., "requires uv, not pip", "Node 18 required for X module"]. NOT generic software advice.
-- [Or "(none)" if nothing new was learned]
+Be concise. Skip empty sections. If 'What Is Unfinished' is empty, the session truly ended cleanly.
 ```
 
 ## Usage Instructions
 
 ### For the compaction system:
-1. Serialize the conversation using the agent's standard message format.
-2. Wrap in `<conversation>` tags.
-3. Append the output format template.
-4. Send to the LLM with the system prompt above.
-5. Parse the structured output and store as the compaction summary.
-6. Append file operations section (extracted separately from tool calls).
-7. Store the last ~20K tokens of conversation as "kept context" (not summarized).
+1. Load the conversation messages from the session JSONL.
+2. Split at ~70% (messages to compact vs remaining).
+3. Serialize the conversation portion using `[Role]: content` format.
+4. Wrap in `<conversation>` tags and append to this prompt.
+5. Send to the LLM; parse the structured output as the compaction summary.
+6. (Optional) If a previous summary exists, include it in `<previous-summary>` tags for incremental merge.
 
-### Custom instructions (optional):
-If the user provides additional direction, append:
-```
-Additional focus: {user_instructions}
-```
-The prompt handles the heavy lifting on its own. Custom instructions are a user override — not a system trying to guess. If the user gives direction, it steers the output. If not, the structured format still produces a high-quality summary.
+### Behavioral score
+This prompt variant scored **22/25** on the behavioral resumption pilot (Slot 2, web-scrape session), tying the best achievable score on that session. It was validated across 4 iterations during Phase 01 optimization.
 
 ## Evaluation Against NORTH-STAR Criteria
 
 | Criterion | Met? | How |
 |---|---|---|
-| Minimum characters with maximum information | ✅ | Structured sections force conciseness; only decision-relevant content preserved |
-| Preservation of bigger-picture objective | ✅ | `## Big Picture` section captures overarching goal, including goal evolution |
-| Preservation of current phase | ✅ | `### Work Stream Evolution` section captures trajectory, not just a snapshot
-| Preservation of current-state detail | ✅ | Last ~20K tokens kept verbatim; recent work not summarized |
-| Low noise / low irritation from stale history | ✅ | Explicit removal rules for stale chatter, repeated explanations, low-value narration |
-| Clear orientation about what matters now | ✅ | `### Next Steps` section with ordered actions |
-| Clear orientation about what was already decided | ✅ | `### Key Decisions` with rationale, evidence refs, outcomes |
-| Preserves active north star and user intent | ✅ | `## Big Picture` and `### Constraints & Preferences` |
-| Preserves decisions and constraints that bind future action | ✅ | `### Key Decisions` with rationale and evidence |
-| Preserves unresolved blockers and uncertainty | ✅ | `#### Blocked` section with evidence |
-| Preserves key evidence and provenance | ✅ | Evidence refs in decisions; file operations section; provenance markers |
-| Preserves concise next-step orientation | ✅ | `### Next Steps` ordered list |
-| Preserves enough surrounding big picture to prevent local optimization | ✅ | `## Big Picture` includes goal evolution; `### Behavioral Patterns` captures project-specific knowledge |
-| Removes stale planning chatter | ✅ | Explicit removal rule |
-| Removes repeated explanations | ✅ | Explicit removal rule |
-| Removes low-value tool narration | ✅ | Explicit removal rule |
-| Removes details that no longer influence next decision | ✅ | Explicit removal rule |
-| Removes outdated hypotheses | ✅ | Explicit removal rule |
-| Removes redundant summaries | ✅ | Explicit removal rule |
+| Minimum characters with maximum information | ✅ | 9 focused sections force conciseness; rules 1-5 constrain scope |
+| Tail-reading (immediate next step) | ✅ | Rules 7-8: read last 10 exchanges, derive next step from session end |
+| Error signature preservation | ✅ | Rules 10-12: specific HTTP codes, tracebacks, exact error messages |
+| Active vs completed distinction | ✅ | Rule 7: explicit anti-closure bias; 'What Is Unfinished' section |
+| Decision preservation | ✅ | '## Key Decisions' section with rationale |
+| Unresolved blocker tracking | ✅ | Rule 3 + '## Current State' requires listing every unresolved error |
+| File operation tracking | ✅ | Rule 4 + '## File Operations' section |
+| Noise reduction | ✅ | Rule 1: summarize discussion, not file contents; skip empty sections |
+| Resumption readiness | ✅ | '## Last Session Activity' + '## Immediate Next Step' pair |
 
 ## Comparison to Pi's Built-in Compaction
 
-| Aspect | Pi's Built-in | This Draft | Improvement |
+| Aspect | Pi's Built-in | Smart Prompt | Improvement |
 |---|---|---|---|
-| System prompt | Generic ("context summarization assistant") | Domain-specific ("session compaction specialist") | I1 |
-| Structure | Fixed template (Goal/Constraints/Progress/Decisions/Next Steps/Critical Context) | Expanded template (adds Phase, Behavioral Patterns, Lessons Learned, evidence refs) | I2, I7 |
-| Activity-aware prioritization | None | Prompt handles it via structured format; custom instructions are user-provided only, not auto-detected | I2, I4 |
-| Evidence linking | None | Evidence refs in decisions (message/timestamp/outcome) | I3 |
-| Incremental merge | Yes (UPDATE_SUMMARIZATION_PROMPT) | Yes (designed for merge) | P3 |
-| File operations | XML tags appended | XML tags in dedicated section | P4 |
-| Recent context | keepRecentTokens=20000 | Same (~20K tokens) | P5 |
-| Removal rules | Implicit (LLM discretion) | Explicit (7 removal categories) | R1-R8 |
-| Behavioral patterns | None | Dedicated section | P7 |
-| Outcome linkage | None | Outcome field in decisions | P10 |
-| Brevity bias resistance | Low (generic prompt) | High (explicit fidelity > brevity) | I8 |
-| Over-compression prevention | None (aggressive truncation) | Explicit rules prevent over-removal | I9 |
+| System prompt | Generic ("context summarization assistant") | Domain-specific ("session compaction specialist") | Focus |
+| Rules | Implicit (LLM discretion) | 12 explicit rules, 6 marked CRITICAL | R1 |
+| Tail-reading | None | Rules 7-8: last 10 exchanges drive next step | R2 |
+| Error specificity | None | Rules 10-12: exact codes, tracebacks, signatures | R3 |
+| Closure bias | Present (tends to declare tasks done) | Rule 7: explicit anti-closure; 'What Is Unfinished' section | R4 |
+| Output sections | 6 generic sections | 9 targeted sections (Last Session Activity, Immediate Next Step) | R5 |
+| Behavioral score | Baseline (not measured) | 22/25 on resumption pilot | Measured |
+| File operations | XML tags appended | Integrated in output format | P4 |
