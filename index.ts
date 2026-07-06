@@ -112,7 +112,7 @@ ${customPrompt}`,
 
         const summary = response.content
           .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text)
+          .map((c: { type: "text"; text: string }) => c.text)
           .join("\n");
 
         if (!summary.trim()) {

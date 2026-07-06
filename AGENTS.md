@@ -38,3 +38,26 @@
 - 2026-07-02T18:00Z — MVP prompt complete; transitioning to field testing phase
 - 2026-07-03 — Behavioral pilot: rubric ≠ behavioral utility discovered; prompt optimized (1/3 → 3/3 → 22/25)
 - 2026-07-05 — AI ergonomics convergence; two-axis framework; evolution docs created in `docs/`
+
+## Precommit checks
+
+```bash
+npm run precommit
+```
+
+Runs: `npm audit --audit-level=moderate` → must pass. (No tests or TypeScript build in this repo.)
+
+## Regular maintenance
+
+### Dependency refresh (run monthly or before releases)
+
+```bash
+bash ~/.local/bin/node_update_reinstall.sh
+npm run precommit
+```
+
+Resets `node_modules` + lockfile, upgrades to latest semver-compatible versions, and runs audit. Keeps transitive vulnerabilities from accumulating.
+
+### Current vulnerability status
+
+Last checked: 2026-07-06 — **0 vulnerabilities** (after upgrading `@earendil-works/pi-coding-agent` from `^0.74.0` to `^0.80.3`).

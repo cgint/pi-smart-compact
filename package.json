@@ -1,7 +1,7 @@
 {
   "name": "pi-smart-compact",
   "version": "0.1.0",
-  "description": "Prompt-only compaction mechanism that transforms overloaded Pi sessions into minimal, high-signal continuation context — better than Pi's built-in compaction.",
+  "description": "Prompt-only compaction mechanism that transforms overloaded Pi sessions into minimal, high-signal continuation context \u2014 better than Pi's built-in compaction.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cgint/pi-smart-compact.git"
@@ -38,10 +38,10 @@
   },
   "scripts": {
     "test": "echo \"No test specified\" && exit 0",
-    "typecheck": "tsc --noEmit"
+    "precommit": "npm audit --audit-level=moderate"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.80.3",
     "@types/node": "^22.0.0"
   }
 }
