@@ -7,7 +7,6 @@ import { convertToLlm, serializeConversation } from "@earendil-works/pi-coding-a
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPT_PATH = join(__dirname, "..", "prompts", "smart-compaction-prompt.md");
-const STATUS_KEY = "smart-compact";
 const LOG_PREFIX = "[pi-smart-compact]";
 
 /**
@@ -36,11 +35,6 @@ export default function register(pi: ExtensionAPI): void {
     console.warn(`${LOG_PREFIX} Failed to load prompt from ${PROMPT_PATH} — compaction interception disabled`);
     return;
   }
-
-  // Clear the status indicator once compaction is fully done.
-  pi.on("session_compact", async (_event, ctx) => {
-    ctx.ui.setStatus?.(STATUS_KEY, undefined);
-  });
 
   pi.registerCommand("smart-compact", {
     description: "Force immediate smart compaction on the current context",
@@ -148,7 +142,6 @@ export default function register(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify?.("Smart compaction complete", "info");
-      ctx.ui.setStatus?.(STATUS_KEY, "✓ compacted");
 
       return {
         compaction: {

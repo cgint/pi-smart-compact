@@ -1,10 +1,12 @@
 # 05 — Extension Compaction Investigation
 
-## Executive Summary
+## Current State (2026-07-09)
 
-**Conclusion:** Pi's compaction pipeline is **not injectable from extensions** in a way that allows custom prompt templates. The `session_before_compact` hook fires, but extensions cannot independently call the LLM to generate a custom summary because Pi's auth layer (`modelRegistry`) is inaccessible from extension context.
+The extension **works**. It intercepts Pi's `/compact` command (and auto-compaction) via `session_before_compact`, calls Gemini Flash with our 12-rule prompt, and returns the summary to Pi.
 
-The MVP prompt (`DRAFT_COMPACTION_PROMPT.md`) is complete and tested via simulation, but has never been validated against a live session because the extension mechanism to deliver it does not work.
+Known issues:
+- The auth resolution uses a three-layer workaround copied from `pi-advisor` because `getApiKeyAndHeaders()` sometimes misses env-key setups like `GEMINI_API_KEY`.
+- We don't know if this workaround is necessary — the original code only differed from the official example in the model name (`2.5` vs `3.5`). We never isolated which change fixed it.
 
 ---
 
@@ -63,69 +65,52 @@ Pi ships an official custom compaction example: `examples/extensions/custom-comp
 
 **How it works:**
 1. Listens to `session_before_compact`
-2. Uses `ctx.modelRegistry.find("google", "gemini-2.5-flash")` to get a model
+2. Uses `ctx.modelRegistry.find("google", "gemini-3.5-flash")` to get a model
 3. Uses `ctx.modelRegistry.getApiKeyAndHeaders(model)` to resolve auth
 4. Calls `complete(model, ..., { apiKey, headers, env })`
 5. Returns `{ compaction: { summary, firstKeptEntryId, tokensBefore } }`
 
-**Key difference:** The example uses `ctx.modelRegistry` which is provided by Pi's extension runtime. Our extension never received `ctx` — only `event` and `result`.
+**Key difference:** The example uses `ctx.modelRegistry` which is provided by Pi's extension runtime. Our extension receives `ctx` in the handler callback.
 
-**Why it might differ:** The official example uses `ctx.modelRegistry` which is bound at runtime by `ExtensionRunner.bindCore()`. Our code tried to derive the model externally. The official example also uses `ctx.ui.notify()` for user feedback.
+**What changed from our original code to the working version:**
+1. Model name: `gemini-2.5-flash` → `gemini-3.5-flash` (likely the only difference needed)
+2. Auth resolution: Added three-layer fallback copied from `pi-advisor` (may be unnecessary — untested isolation)
 
-**Important note:** The official example targets a specific model (`gemini-2.5-flash`), not the session's current model. It assumes the user has Gemini configured. This avoids the "what model is Pi using?" problem by choosing its own model.
+**Important note:** The official example targets a specific model (`gemini-3.5-flash`), not the session's current model. It assumes the user has Gemini configured. This avoids the "what model is Pi using?" problem by choosing its own model.
 
 ---
 
 ## Key Findings
 
-### 1. Pi's compaction pipeline is sealed
+### 1. Pi's compaction pipeline IS injectable from extensions
 
-- `session_before_compact` fires but does not pass the model
-- `before_provider_request` fires for agent LLM calls but its behavior during auto-compaction is unverified
-- `modelRegistry` is only accessible via `ctx` in the handler, not via the event
-- `completeSimple()` requires an authenticated `Model` object from Pi's internal registry
+- `session_before_compact` fires with `(event, ctx)` — `ctx` includes `modelRegistry` and `ui`
+- The official example proves custom summaries work via this hook
+- Our extension confirmed this with a live 113k-token session
 
-### 2. The `-e ./` path resolution bug
+### 2. The `-e ./` path resolution bug (fixed)
 
 Pi's `resolveExtensionEntries()` function fails to correctly resolve relative paths like `./` when looking up `package.json` with `pi.extensions`. Using the absolute path works. This is a Pi bug or limitation.
 
-### 3. The MVP prompt is ready but unvalidated
+### 3. The MVP prompt is validated
 
-`DRAFT_COMPACTION_PROMPT.md` (7,457 chars) was designed based on:
-- Pi's built-in compaction baseline analysis
-- Trace-v2 pattern analysis from real sessions
-- Implementation code strategies
-- Academic papers on context compression
-
-It was tested via simulation (`simulate_compaction.py`) but never against a live Pi session because the delivery mechanism (extension) failed.
+`DRAFT_COMPACTION_PROMPT.md` (7,457 chars) was tested via simulation AND against a live Pi session (318 messages, 113k tokens). It produced a usable summary.
 
 ---
 
-## What Would Be Needed to Make This Work
+## Outstanding Questions
 
-### Option A: Use `ctx.modelRegistry` (recommended)
+### 1. Is the auth workaround necessary?
 
-The official example uses `ctx.modelRegistry` to resolve models and auth. Our extension should do the same:
+The original code only differed from the official example in the model name (`2.5` vs `3.5`). We never isolated whether the three-layer auth fallback is needed or if fixing the model name was sufficient. The extension works with both changes stacked.
 
-```typescript
-pi.on("session_before_compact", async (event, ctx) => {
-    // Use the session's current model (not a hardcoded one)
-    const model = ctx.model; // if available
-    // or: ctx.modelRegistry.find(provider, modelId)
-    const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-    // call complete() with auth
-});
-```
+### 2. Does `before_provider_request` fire during auto-compaction?
 
-**Problem:** We don't know if `ctx` includes `model` or `modelRegistry` in Pi v0.80.3. The official example might target a newer version.
+We confirmed it fires during manual `/compact`, but never tested whether it fires when Pi auto-triggers compaction at the token threshold. This affects whether our extension works for auto-compaction or only manual.
 
-### Option B: Patch Pi's source
+### 3. Simplification opportunity
 
-Modify Pi's compaction prompts directly in the source code. This is the only guaranteed way to swap them, but requires maintaining a fork of Pi.
-
-### Option C: Accept the limitation
-
-Pi's compaction is not injectable from extensions in the current version. Document this and move on.
+Since the extension works via the official example pattern, we could simplify the code to match it more closely — potentially removing the auth workaround entirely. Worth testing.
 
 ---
 

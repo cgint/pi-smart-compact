@@ -67,7 +67,7 @@ describe("register", () => {
     expect(mockPi.on).toHaveBeenCalledWith("session_before_compact", expect.any(Function));
   });
 
-  it("registers smart-compact command and session_compact listener when env var is true", async () => {
+  it("registers session_before_compact handler and smart-compact command when env var is true", async () => {
     process.env.PI_SMART_COMPACT_ENABLED = "true";
     const mockPi: any = {
       on: vi.fn((_event: string, _handler: any) => {}),
@@ -77,7 +77,7 @@ describe("register", () => {
     const mod = await import("../src/smart-compact.js");
     mod.default(mockPi);
 
-    expect(mockPi.on).toHaveBeenCalledWith("session_compact", expect.any(Function));
+    expect(mockPi.on).toHaveBeenCalledWith("session_before_compact", expect.any(Function));
     expect(mockPi.registerCommand).toHaveBeenCalledWith("smart-compact", expect.any(Object));
   });
 });
