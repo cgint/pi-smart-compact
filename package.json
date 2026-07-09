@@ -1,7 +1,7 @@
 {
   "name": "pi-smart-compact",
   "version": "0.1.0",
-  "description": "Prompt-only compaction mechanism that transforms overloaded Pi sessions into minimal, high-signal continuation context \u2014 better than Pi's built-in compaction.",
+  "description": "Pi extension that replaces built-in compaction with a smarter prompt-driven summary, preserving decisions, blockers, and active work state.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cgint/pi-smart-compact.git"
@@ -22,6 +22,7 @@
   "license": "MIT",
   "files": [
     "index.ts",
+    "prompts",
     "src",
     "README.md",
     "LICENSE"
@@ -32,16 +33,20 @@
     ]
   },
   "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.74.0",
     "@earendil-works/pi-coding-agent": ">=0.74.0",
     "@earendil-works/pi-tui": "*",
     "@sinclair/typebox": "*"
   },
   "scripts": {
-    "test": "echo \"No test specified\" && exit 0",
-    "precommit": "npm audit --audit-level=moderate"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "precommit": "tsc --noEmit && npm run test && npm audit --audit-level=moderate"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.80.3",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "vitest": "^3.0.0"
   }
 }
