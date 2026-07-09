@@ -42,18 +42,40 @@ export default function register(pi: ExtensionAPI): void {
     const { messagesToSummarize, turnPrefixMessages, firstKeptEntryId, previousSummary, tokensBefore } = preparation;
 
     // Prefer a cheap/fast model for summarization; fall back to current model
-    const summaryModel = ctx.modelRegistry.find("google", "gemini-2.5-flash") ?? ctx.model;
+    const summaryModel = ctx.modelRegistry.find("google", "gemini-3.5-flash") ?? ctx.model;
     if (!summaryModel) {
       console.warn(`${LOG_PREFIX} No model available for summarization, falling back to Pi's default`);
       return;
     }
 
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(summaryModel);
-    if (!auth.ok) {
-      console.warn(`${LOG_PREFIX} Auth failed for ${summaryModel.id}: ${auth.error}, falling back`);
-      return;
+    let apiKey: string | undefined;
+    let authHeaders: Record<string, string> | undefined;
+
+    // If auth fails but the provider declares no-api-key-needed, bypass the
+    // gate — getApiKeyAndHeaders uses a stricter path than normal execution
+    // and can reject providers that work fine at runtime.
+    if (auth.ok) {
+      apiKey = auth.apiKey;
+      authHeaders = auth.headers;
+    } else {
+      const rawModel = ctx.modelRegistry.find(summaryModel.provider, summaryModel.id);
+      const rawApiKey = (rawModel as unknown as { apiKey?: string })?.apiKey;
+      if (rawApiKey !== "no-api-key-needed") {
+        console.warn(`${LOG_PREFIX} Auth failed for ${summaryModel.id}: ${auth.error}, falling back`);
+        return;
+      }
     }
-    if (!auth.apiKey && summaryModel.provider !== "8081-twins" && summaryModel.provider !== "8081-sparky") {
+
+    // Work around modelRegistry.getApiKeyAndHeaders() using a stricter auth
+    // path than normal model execution for some env-key setups (e.g. google/
+    // GEMINI_API_KEY). Retry with provider-level resolution, which includes
+    // the standard env fallback used elsewhere in Pi.
+    if (!apiKey) {
+      apiKey = await ctx.modelRegistry.getApiKeyForProvider(summaryModel.provider);
+    }
+
+    if (!apiKey) {
       console.warn(`${LOG_PREFIX} No API key for ${summaryModel.provider}, falling back`);
       return;
     }
@@ -88,9 +110,8 @@ export default function register(pi: ExtensionAPI): void {
         summaryModel,
         { messages: summaryMessages },
         {
-          apiKey: auth.apiKey,
-          headers: auth.headers,
-          env: auth.env,
+          apiKey,
+          headers: authHeaders,
           maxTokens: 8192,
           signal,
         },
