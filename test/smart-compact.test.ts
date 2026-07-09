@@ -58,12 +58,27 @@ describe("register", () => {
     process.env.PI_SMART_COMPACT_ENABLED = "true";
     const mockPi: any = {
       on: vi.fn((_event: string, _handler: any) => {}),
+      registerCommand: vi.fn((_name: string, _cmd: any) => {}),
     };
 
     const mod = await import("../src/smart-compact.js");
     mod.default(mockPi);
 
     expect(mockPi.on).toHaveBeenCalledWith("session_before_compact", expect.any(Function));
+  });
+
+  it("registers smart-compact command and session_compact listener when env var is true", async () => {
+    process.env.PI_SMART_COMPACT_ENABLED = "true";
+    const mockPi: any = {
+      on: vi.fn((_event: string, _handler: any) => {}),
+      registerCommand: vi.fn((_name: string, _cmd: any) => {}),
+    };
+
+    const mod = await import("../src/smart-compact.js");
+    mod.default(mockPi);
+
+    expect(mockPi.on).toHaveBeenCalledWith("session_compact", expect.any(Function));
+    expect(mockPi.registerCommand).toHaveBeenCalledWith("smart-compact", expect.any(Object));
   });
 });
 
@@ -73,5 +88,32 @@ describe("iterative compaction", () => {
     expect(prompt).toContain("IF <previous-summary> TAGS ARE PRESENT");
     expect(prompt).toContain("PRESERVE all existing");
     expect(prompt).toContain("MERGE the new conversation");
+  });
+});
+
+describe("smart-compact command", () => {
+  it("registers the /smart-compact command when enabled", async () => {
+    process.env.PI_SMART_COMPACT_ENABLED = "true";
+    const mockPi: any = {
+      on: vi.fn((_event: string, _handler: any) => {}),
+      registerCommand: vi.fn((_name: string, _cmd: any) => {}),
+    };
+
+    const mod = await import("../src/smart-compact.js");
+    mod.default(mockPi);
+
+    expect(mockPi.registerCommand).toHaveBeenCalledWith("smart-compact", expect.any(Object));
+  });
+
+  it("does NOT register the command when disabled", async () => {
+    const mockPi: any = {
+      on: vi.fn((_event: string, _handler: any) => {}),
+      registerCommand: vi.fn((_name: string, _cmd: any) => {}),
+    };
+
+    const mod = await import("../src/smart-compact.js");
+    mod.default(mockPi);
+
+    expect(mockPi.registerCommand).not.toHaveBeenCalledWith("smart-compact", expect.any(Object));
   });
 });

@@ -37,6 +37,26 @@ export default function register(pi: ExtensionAPI): void {
     return;
   }
 
+  // Clear the status indicator once compaction is fully done.
+  pi.on("session_compact", async (_event, ctx) => {
+    ctx.ui.setStatus?.(STATUS_KEY, undefined);
+  });
+
+  pi.registerCommand("smart-compact", {
+    description: "Force immediate smart compaction on the current context",
+    handler: async (args, ctx) => {
+      ctx.compact({
+        customInstructions: args.trim() || undefined,
+        onComplete: () => {
+          ctx.ui.notify?.("Smart compaction completed", "info");
+        },
+        onError: (err) => {
+          ctx.ui.notify?.(`Smart compaction failed: ${err.message}`, "error");
+        },
+      });
+    },
+  });
+
   pi.on("session_before_compact", async (event, ctx) => {
     const { preparation, signal } = event;
     const { messagesToSummarize, turnPrefixMessages, firstKeptEntryId, previousSummary, tokensBefore } = preparation;
