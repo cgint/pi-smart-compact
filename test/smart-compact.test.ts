@@ -1,5 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { loadPrompt } from "../src/smart-compact.js";
+
+// Clean up env var after each test
+afterEach(() => {
+  delete process.env.PI_SMART_COMPACT_ENABLED;
+});
 
 describe("loadPrompt", () => {
   it("loads the smart compaction prompt", () => {
@@ -26,7 +31,31 @@ describe("loadPrompt", () => {
 });
 
 describe("register", () => {
-  it("registers session_before_compact handler", async () => {
+  it("does NOT register handler when env var is not set", async () => {
+    const mockPi: any = {
+      on: vi.fn((_event: string, _handler: any) => {}),
+    };
+
+    const mod = await import("../src/smart-compact.js");
+    mod.default(mockPi);
+
+    expect(mockPi.on).not.toHaveBeenCalled();
+  });
+
+  it("does NOT register handler when env var is false", async () => {
+    process.env.PI_SMART_COMPACT_ENABLED = "false";
+    const mockPi: any = {
+      on: vi.fn((_event: string, _handler: any) => {}),
+    };
+
+    const mod = await import("../src/smart-compact.js");
+    mod.default(mockPi);
+
+    expect(mockPi.on).not.toHaveBeenCalled();
+  });
+
+  it("registers session_before_compact handler when env var is true", async () => {
+    process.env.PI_SMART_COMPACT_ENABLED = "true";
     const mockPi: any = {
       on: vi.fn((_event: string, _handler: any) => {}),
     };

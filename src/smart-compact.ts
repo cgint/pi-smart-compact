@@ -22,7 +22,15 @@ export function loadPrompt(): string | null {
   }
 }
 
+const ENABLED_VAR = "PI_SMART_COMPACT_ENABLED";
+
 export default function register(pi: ExtensionAPI): void {
+  // Env-var toggle: only activate when explicitly set to "true"
+  if (process.env[ENABLED_VAR] !== "true") {
+    console.info(`${LOG_PREFIX} Disabled (set ${ENABLED_VAR}=true to enable)`);
+    return;
+  }
+
   const customPrompt = loadPrompt();
   if (!customPrompt) {
     console.warn(`${LOG_PREFIX} Failed to load prompt from ${PROMPT_PATH} — compaction interception disabled`);

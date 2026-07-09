@@ -18,11 +18,19 @@ pipa install -c .
 
 ## Configuration
 
+Enable the extension by setting the environment variable:
+
+```bash
+export PI_SMART_COMPACT_ENABLED=true
+```
+
+By default the extension is **disabled** (Pi's built-in compaction runs). Set the env var to `true` to activate.
+
 Edit `prompts/smart-compaction-prompt.md` to change compaction behavior. No code changes needed — reload Pi with `/reload`.
 
 ## Structure
 
 - **`index.ts`** — Entry point (delegates to `src/`)
-- **`src/smart-compact.ts`** — Extension logic
+- **`src/smart-compact.ts`** — Extension logic (env-var toggle, model selection, fallback)
 - **`prompts/smart-compaction-prompt.md`** — The compaction prompt (single config point)
 - **`test/`** — Smoke tests
