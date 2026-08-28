@@ -78,10 +78,35 @@ export type EpisodeRetirementReceiptV2 = ReceiptBase & {
   promptVersion: string;
   usage: Record<string, unknown>;
 };
+export type EpisodeRetirementReceiptV3 = ReceiptBase & {
+  version: 3;
+  generation: number;
+  parentReceiptEntryId: string;
+  parentReceiptFingerprint: string;
+  priorCapsuleFingerprint: string;
+  newlyCompletedEpisodeEntries: Array<{ id: string; fingerprint: string }>;
+  provider: string;
+  model: string;
+  reasoningEffort: ThinkingLevel;
+  promptVersion: "capsule-v3";
+  usage: Record<string, unknown>;
+  deltaMetrics: {
+    newlyCompletedEpisodeCount: number;
+    newlyCompletedMessageCount: number;
+    newlyCompletedSourceBytes: number;
+    cumulativeMessageCount: number;
+    cumulativeSourceBytes: number;
+    priorCapsuleTextBytes: number;
+    newCapsuleTextBytes: number;
+  };
+};
 export type EpisodeRetirementReceipt =
   | EpisodeRetirementReceiptV1
-  | EpisodeRetirementReceiptV2;
+  | EpisodeRetirementReceiptV2
+  | EpisodeRetirementReceiptV3;
 type AnyReceipt = EpisodeRetirementReceipt;
+type ReceiptEntry = SessionLikeEntry & { data: AnyReceipt };
+const hashJson = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 type SelectionReason =
   | "insufficient completed episodes"
@@ -303,13 +328,75 @@ function resolvedSlots(manager: ContextReadonlyManager): SessionLikeEntry[] {
   return slots;
 }
 
-function getReceipts(entries: SessionLikeEntry[]): AnyReceipt[] {
-  return entries.flatMap((entry) =>
-    entry.type === "custom" && entry.customType === RECEIPT_TYPE &&
-      isReceipt(entry.data)
-      ? [entry.data]
-      : []
-  );
+function getReceiptEntries(entries: SessionLikeEntry[]): ReceiptEntry[] {
+  return entries.flatMap((entry) => entry.type === "custom" &&
+    entry.customType === RECEIPT_TYPE && isReceipt(entry.data)
+    ? [{ ...entry, data: entry.data }] : []);
+}
+function receiptRangeIsValid(entries: SessionLikeEntry[], receipt: AnyReceipt): boolean {
+  return !("applied" in validatedRange(entries, receipt));
+}
+type RawMetrics = { completedEpisodeCount: number; sourceMessageCount: number; sourceMessageBytes: number };
+function requiredRepeatedEpisodeCount(entries: SessionLikeEntry[], parentActiveId: string, activeId: string): number | undefined {
+  const start = entries.findIndex((entry) => entry.id === parentActiveId);
+  const active = entries.findIndex((entry) => entry.id === activeId);
+  if (start < 0 || active <= start) return undefined;
+  const interval = entries.slice(start, active);
+  const required = interval.filter((entry) => entry.type === "message" && entry.message?.role === "user").length;
+  const selection = selectLatestCompletedEpisodes([...interval, entries[active]], required);
+  return required > 0 && selection.sourceEntryIds.length === interval.length &&
+    selection.sourceEntryIds.every((id, index) => id === interval[index].id) ? required : undefined;
+}
+function rawMetrics(entries: SessionLikeEntry[], ids: string[]): RawMetrics {
+  const source = ids.map((id) => entries.find((entry) => entry.id === id)!);
+  return {
+    completedEpisodeCount: source.filter((entry) => entry.message!.role === "user").length,
+    sourceMessageCount: source.length,
+    sourceMessageBytes: Buffer.byteLength(JSON.stringify(source.map((entry) => entry.message))),
+  };
+}
+type ReceiptAssessment = { state: "none" | "malformed" | "compacted" } | { state: "valid"; entry: ReceiptEntry };
+function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: SessionLikeEntry[]): ReceiptAssessment {
+  const receiptSlots = branch.filter((entry) => entry.type === "custom" && entry.customType === RECEIPT_TYPE);
+  if (receiptSlots.length === 0) return { state: "none" };
+  if (receiptSlots.some((entry) => !isReceipt(entry.data))) return { state: "malformed" };
+  const receipts = getReceiptEntries(branch);
+  const latest = receipts.at(-1)!;
+  if (branch.slice(branch.findIndex((entry) => entry.id === latest.id) + 1).some((entry) => entry.type === "compaction")) return { state: "compacted" };
+  const validate = (entry: ReceiptEntry): boolean => {
+    if (!receiptRangeIsValid(contextEntries, entry.data)) return false;
+    if (entry.data.version !== 3) return true;
+    const receipt = entry.data;
+    const parent = receipts.find((candidate) => candidate.id === receipt.parentReceiptEntryId);
+    if (!parent || parent !== receipts[receipts.indexOf(entry) - 1] || !validate(parent)) return false;
+    const expectedGeneration = parent.data.version === 3 ? parent.data.generation + 1 : 2;
+    const cumulative = rawMetrics(contextEntries, receipt.sourceEntryIds);
+    const deltaIds = receipt.sourceEntryIds.slice(parent.data.sourceEntryIds.length);
+    const requiredDeltaEpisodes = requiredRepeatedEpisodeCount(contextEntries, parent.data.activeUserEntryId, receipt.activeUserEntryId);
+    if (requiredDeltaEpisodes === undefined) return false;
+    const delta = rawMetrics(contextEntries, deltaIds);
+    if (delta.completedEpisodeCount !== requiredDeltaEpisodes) return false;
+    const expectedReplacement = { ...cumulative, capsuleTextBytes: Buffer.byteLength(capsuleText(receipt.capsule, receipt.sourceEntryIds)) };
+    const expectedDelta = {
+      newlyCompletedEpisodeCount: delta.completedEpisodeCount, newlyCompletedMessageCount: delta.sourceMessageCount,
+      newlyCompletedSourceBytes: delta.sourceMessageBytes, cumulativeMessageCount: cumulative.sourceMessageCount,
+      cumulativeSourceBytes: cumulative.sourceMessageBytes,
+      priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parent.data.capsule, parent.data.sourceEntryIds)),
+      newCapsuleTextBytes: expectedReplacement.capsuleTextBytes,
+    };
+    return receipt.generation === expectedGeneration &&
+      JSON.stringify(receipt.replacementMetrics) === JSON.stringify(expectedReplacement) &&
+      JSON.stringify(receipt.deltaMetrics) === JSON.stringify(expectedDelta) &&
+      receipt.parentReceiptFingerprint === hashJson(parent.data) &&
+      receipt.priorCapsuleFingerprint === hashJson(parent.data.capsule) &&
+      receipt.sourceEntryIds.length === parent.data.sourceEntryIds.length + receipt.newlyCompletedEpisodeEntries.length &&
+      receipt.sourceEntryIds.slice(0, parent.data.sourceEntryIds.length).every((id, i) => id === parent.data.sourceEntryIds[i]) &&
+      receipt.sourceFingerprints.slice(0, parent.data.sourceFingerprints.length).every((id, i) => id === parent.data.sourceFingerprints[i]) &&
+      receipt.newlyCompletedEpisodeEntries.every((item, i) =>
+        item.id === receipt.sourceEntryIds[parent.data.sourceEntryIds.length + i] &&
+        item.fingerprint === receipt.sourceFingerprints[parent.data.sourceFingerprints.length + i]);
+  };
+  return validate(latest) ? { state: "valid", entry: latest } : { state: "malformed" };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -326,7 +413,7 @@ function hasReplacementMetrics(value: unknown): boolean {
 }
 function isReceipt(value: unknown): value is AnyReceipt {
   if (
-    !isRecord(value) || (value.version !== 1 && value.version !== 2) ||
+    !isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     value.kind !== RECEIPT_TYPE ||
     !Array.isArray(value.sourceEntryIds) ||
     !value.sourceEntryIds.every((id) => typeof id === "string") ||
@@ -342,11 +429,26 @@ function isReceipt(value: unknown): value is AnyReceipt {
     !isCapsule(value.capsule) ||
     (value.replacementMetrics !== undefined && !hasReplacementMetrics(value.replacementMetrics))
   ) return false;
-  return value.version === 1 ||
-    (typeof value.provider === "string" && value.provider.length > 0 &&
-      typeof value.model === "string" && value.model.length > 0 &&
-      THINKING_LEVELS.has(value.reasoningEffort as ThinkingLevel) &&
-      value.promptVersion === "capsule-v2" && isRecord(value.usage));
+  if (value.version === 1) return true;
+  const providerFields = typeof value.provider === "string" && value.provider.length > 0 &&
+    typeof value.model === "string" && value.model.length > 0 &&
+    THINKING_LEVELS.has(value.reasoningEffort as ThinkingLevel) && isRecord(value.usage);
+  if (value.version === 2) return providerFields && value.promptVersion === "capsule-v2";
+  const delta = value.deltaMetrics;
+  const exactKeys = (record: Record<string, unknown>, keys: string[]) => Object.keys(record).length === keys.length && keys.every((key) => key in record);
+  const positive = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number > 0;
+  const byteCount = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number >= 0;
+  return providerFields && value.promptVersion === "capsule-v3" && hasReplacementMetrics(value.replacementMetrics) &&
+    typeof value.generation === "number" && Number.isInteger(value.generation) && value.generation >= 2 &&
+    typeof value.parentReceiptEntryId === "string" && value.parentReceiptEntryId.length > 0 &&
+    typeof value.parentReceiptFingerprint === "string" && /^[a-f0-9]{64}$/.test(value.parentReceiptFingerprint) &&
+    typeof value.priorCapsuleFingerprint === "string" && /^[a-f0-9]{64}$/.test(value.priorCapsuleFingerprint) &&
+    Array.isArray(value.newlyCompletedEpisodeEntries) && value.newlyCompletedEpisodeEntries.length > 0 &&
+    new Set(value.newlyCompletedEpisodeEntries.map((item) => isRecord(item) ? item.id : "")).size === value.newlyCompletedEpisodeEntries.length &&
+    value.newlyCompletedEpisodeEntries.every((item) => isRecord(item) && exactKeys(item, ["id", "fingerprint"]) && typeof item.id === "string" && item.id.length > 0 && /^[a-f0-9]{64}$/.test(item.fingerprint as string)) &&
+    isRecord(delta) && exactKeys(delta, ["newlyCompletedEpisodeCount", "newlyCompletedMessageCount", "newlyCompletedSourceBytes", "cumulativeMessageCount", "cumulativeSourceBytes", "priorCapsuleTextBytes", "newCapsuleTextBytes"]) &&
+    positive(delta.newlyCompletedEpisodeCount) && positive(delta.newlyCompletedMessageCount) &&
+    byteCount(delta.newlyCompletedSourceBytes) && positive(delta.cumulativeMessageCount) && byteCount(delta.cumulativeSourceBytes) && byteCount(delta.priorCapsuleTextBytes) && byteCount(delta.newCapsuleTextBytes);
 }
 function isCapsule(value: unknown): value is ContinuationCapsule {
   if (
@@ -431,9 +533,15 @@ function capsuleRequest(
   selected: SessionLikeEntry[],
   active: AgentMessage,
   continuationGoal: string,
+  priorCapsule?: ContinuationCapsule,
 ): string {
   const payload = redact(
-    JSON.stringify({
+    JSON.stringify(priorCapsule ? {
+      priorContinuationCapsule: priorCapsule,
+      newlyCompletedEpisodeEntries: selected,
+      activeRequest: active,
+      continuationGoal,
+    } : {
       selectedEpisodeEntries: selected,
       activeRequest: active,
       continuationGoal,
@@ -467,7 +575,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       if (isPartial) {
         return new Text(theme.fg("warning", "Authoring retirement capsule…"), 0, 0);
       }
-      const receipt = result.details as EpisodeRetirementReceiptV2 | undefined;
+      const receipt = result.details as (EpisodeRetirementReceiptV2 | EpisodeRetirementReceiptV3) | undefined;
       const metrics = receipt?.replacementMetrics;
       if (!receipt || !metrics) {
         const text = result.content.flatMap((part) =>
@@ -490,7 +598,8 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           ? [`$${usage.cost.total}`]
           : [],
       ).join(" · ");
-      const compact = `${metrics.completedEpisodeCount} completed episode(s), ${metrics.sourceMessageCount} source message(s), ${metrics.sourceMessageBytes} B serialized source → ${metrics.capsuleTextBytes} B capsule-text; ${receipt.provider}/${receipt.model} (${receipt.reasoningEffort})${usageText ? `; LLM: ${usageText}` : ""}`;
+      const generation = receipt.version === 3 ? `generation ${receipt.generation}; this retirement: ${receipt.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${receipt.deltaMetrics.newlyCompletedMessageCount} message(s), ${receipt.deltaMetrics.newlyCompletedSourceBytes} B source → ${receipt.deltaMetrics.newCapsuleTextBytes} B capsule-text` : "generation 1";
+      const compact = `${generation}; cumulative ${metrics.completedEpisodeCount} completed episode(s), ${metrics.sourceMessageCount} source message(s), ${metrics.sourceMessageBytes} B serialized source → ${metrics.capsuleTextBytes} B capsule-text; ${receipt.provider}/${receipt.model} (${receipt.reasoningEffort})${usageText ? `; LLM: ${usageText}` : ""}`;
       if (!expanded) {
         return new Text(theme.fg("success", `${compact} (${keyHint("app.tools.expand", "to expand")})`), 0, 0);
       }
@@ -507,16 +616,26 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           "Episode retirement requires a non-empty bounded continuationGoal.",
         );
       }
-      if (getReceipts(branch).length > 0) {
-        throw new Error("Episode retirement refused: repeated retirement is unsupported.");
-      }
       const contextEntries = resolvedSlots(ctx.sessionManager);
+      const assessment = assessLatestReceipt(branch, contextEntries);
+      if (assessment.state === "compacted") throw new Error("Episode retirement refused: native compaction after retirement is unsupported.");
+      if (assessment.state === "malformed") throw new Error("Episode retirement refused: latest receipt chain is malformed or inactive.");
+      const parentEntry = assessment.state === "valid" ? assessment.entry : undefined;
       const selection = selectLatestCompletedEpisodes(
         contextEntries,
         params.latestCompletedEpisodes,
       );
       if (selection.reason) {
         throw new Error("Episode retirement refused: " + selection.reason + ".");
+      }
+      if (parentEntry) {
+        const required = requiredRepeatedEpisodeCount(contextEntries, parentEntry.data.activeUserEntryId, selection.activeUserEntryId);
+        if (required === undefined || params.latestCompletedEpisodes !== required || selection.sourceEntryIds[0] !== parentEntry.data.activeUserEntryId) {
+          throw new Error(`Episode retirement refused: repeated retirement requires exactly ${required ?? 0} latest completed episode(s) adjacent to the parent active user.`);
+        }
+      }
+      if (signal?.aborted) {
+        throw new Error("Episode retirement capsule request aborted.");
       }
       const configured = parseCapsuleModel();
       const reasoningEffort = configuredReasoningEffort();
@@ -547,22 +666,17 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           }],
         } as any,
       );
-      if (signal?.aborted) {
-        throw new Error("Episode retirement capsule request aborted.");
-      }
       const active = contextEntries.find((entry) =>
         entry.id === selection.activeUserEntryId
       )!.message!;
-      const selected = contextEntries.filter((entry) =>
-        selection.sourceEntryIds.includes(entry.id)
-      );
+      const selected = contextEntries.filter((entry) => selection.sourceEntryIds.includes(entry.id));
       // Same public auth + streamSimple boundary used by pi-ai-consortium.
       const response = await streamSimple(model, {
         messages: [{
           role: "user",
           content: [{
             type: "text",
-            text: capsuleRequest(selected, active, params.continuationGoal),
+            text: capsuleRequest(selected, active, params.continuationGoal, parentEntry?.data.capsule),
           }],
           timestamp: Date.now(),
         }],
@@ -586,22 +700,30 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
         throw new Error("Capsule model returned an empty response.");
       }
       const capsule = parseCapsule(text);
-      const receipt: EpisodeRetirementReceiptV2 = {
-        version: 2,
-        kind: RECEIPT_TYPE,
-        ...selection,
-        capsule,
-        provider: configured.provider,
-        model: configured.model,
-        reasoningEffort,
-        promptVersion: "capsule-v2",
-        usage: response.usage as unknown as Record<string, unknown>,
-        replacementMetrics: {
-          completedEpisodeCount: params.latestCompletedEpisodes,
-          sourceMessageCount: selected.length,
-          sourceMessageBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))),
-          capsuleTextBytes: Buffer.byteLength(capsuleText(capsule, selection.sourceEntryIds)),
-        },
+      const cumulativeIds = parentEntry ? [...parentEntry.data.sourceEntryIds, ...selection.sourceEntryIds] : selection.sourceEntryIds;
+      const cumulativeFingerprints = parentEntry ? [...parentEntry.data.sourceFingerprints, ...selection.sourceFingerprints] : selection.sourceFingerprints;
+      const cumulative = contextEntries.filter((entry) => cumulativeIds.includes(entry.id));
+      const cumulativeRaw = rawMetrics(contextEntries, cumulativeIds);
+      const replacementMetrics = {
+        ...cumulativeRaw,
+        capsuleTextBytes: Buffer.byteLength(capsuleText(capsule, cumulativeIds)),
+      };
+      const receipt: EpisodeRetirementReceipt = parentEntry ? {
+        version: 3, kind: RECEIPT_TYPE, sourceEntryIds: cumulativeIds, sourceFingerprints: cumulativeFingerprints,
+        activeUserEntryId: selection.activeUserEntryId, capsule, provider: configured.provider, model: configured.model,
+        reasoningEffort, promptVersion: "capsule-v3", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
+        generation: parentEntry.data.version === 3 ? parentEntry.data.generation + 1 : 2,
+        parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data),
+        priorCapsuleFingerprint: hashJson(parentEntry.data.capsule),
+        newlyCompletedEpisodeEntries: selected.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
+        deltaMetrics: { newlyCompletedEpisodeCount: params.latestCompletedEpisodes, newlyCompletedMessageCount: selected.length,
+          newlyCompletedSourceBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))),
+          cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes,
+          priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)),
+          newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
+      } : {
+        version: 2, kind: RECEIPT_TYPE, ...selection, capsule, provider: configured.provider, model: configured.model,
+        reasoningEffort, promptVersion: "capsule-v2", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
       };
       pi.appendEntry(RECEIPT_TYPE, receipt);
       // Public ExtensionAPI tool-result typing does not expose nested completion usage.
@@ -625,13 +747,11 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
-      const receipts = getReceipts(branch);
-      if (receipts.length !== 1) {
-        throw new Error(
-          "Episode recall refused: expected exactly one receipt.",
-        );
-      }
-      const receipt = receipts[0];
+      let contextEntries: SessionLikeEntry[];
+      try { contextEntries = resolvedSlots(ctx.sessionManager); } catch { throw new Error("Episode recall refused: resolved context is unavailable."); }
+      const assessment = assessLatestReceipt(branch, contextEntries);
+      if (assessment.state !== "valid") throw new Error(assessment.state === "compacted" ? "Episode recall refused: native compaction after retirement." : "Episode recall refused: no valid active receipt chain.");
+      const receipt = assessment.entry.data;
       const originals = receipt.sourceEntryIds.map((id) =>
         branch.find((entry) => entry.id === id)
       );
@@ -680,18 +800,14 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
   // Public ExtensionAPI context handler typing does not expose this structural overlay.
   pi.on("context", (event, ctx): any => {
     const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
-    const receipts = getReceipts(branch);
-    if (receipts.length !== 1) return;
     let contextEntries: SessionLikeEntry[];
-    try {
-      contextEntries = resolvedSlots(ctx.sessionManager);
-    } catch {
-      return;
-    }
+    try { contextEntries = resolvedSlots(ctx.sessionManager); } catch { return; }
+    const assessment = assessLatestReceipt(branch, contextEntries);
+    if (assessment.state !== "valid") return;
     const projected = projectEventMessages(
       contextEntries,
       event.messages as AgentMessage[],
-      receipts[0],
+      assessment.entry.data,
     );
     if (projected.applied) return { messages: projected.messages as any };
   });

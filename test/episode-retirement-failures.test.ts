@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 const { stream } = vi.hoisted(() => ({ stream: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/compat", () => ({ streamSimple: stream }));
@@ -81,7 +82,7 @@ function harness(
         getTree: () => [],
         getEntries: () => branch,
         getLeafId: () => branch.at(-1)?.id ?? null,
-        buildContextEntries: () => branch,
+        buildContextEntries: () => branch.filter((entry) => entry.type === "message"),
       },
       modelRegistry: registry,
     },
@@ -116,12 +117,47 @@ describe("episode retirement failures", () => {
     expect(selectLatestCompletedEpisodes(createEntries() as SessionLikeEntry[], 1).reason).toBe(reason);
   });
 
-  it("existing receipt refuses before stream or append with its specific reason", async () => {
+  it("a V1 parent rejects a non-adjacent repeated range before stream or append", async () => {
     const h = harness();
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
-    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("repeated retirement is unsupported");
+    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("requires exactly 0 latest completed episode");
     expect(h.calls()).toBe(0);
     expect(h.appended).toHaveLength(0);
+  });
+
+  it("rejects a repeated range larger than its required N before model lookup or auth", async () => {
+    const h = harness();
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
+    h.branch.push(msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
+    h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
+    let finds = 0, auths = 0;
+    h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; };
+    h.ctx.modelRegistry.getApiKeyAndHeaders = async () => { auths++; return { ok: true }; };
+    await expect(h.retire.execute("x", { latestCompletedEpisodes: 2, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("requires exactly 1 latest completed episode");
+    expect(finds).toBe(0); expect(auths).toBe(0); expect(h.calls()).toBe(0); expect(h.appended).toHaveLength(0);
+  });
+
+  it("uses raw cumulative slots for a V1 parent's generation-2 metrics", async () => {
+    const h = harness();
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
+    h.branch.push(msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
+    h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
+    await h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx);
+    const receipt: any = h.appended[0];
+    expect(receipt).toMatchObject({ version: 3, generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"] });
+    expect(receipt.replacementMetrics.completedEpisodeCount).toBe(2);
+  });
+
+  it("uses a V2 parent to create generation 2 with cumulative totals and hashes", async () => {
+    const h = harness();
+    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: parent }, msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
+    h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
+    await h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx);
+    const receipt: any = h.appended[0];
+    expect(receipt).toMatchObject({ version: 3, generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"], replacementMetrics: { completedEpisodeCount: 2, sourceMessageCount: 4 } });
+    expect(receipt.parentReceiptFingerprint).toBe(createHash("sha256").update(JSON.stringify(parent)).digest("hex"));
+    expect(receipt.priorCapsuleFingerprint).toBe(createHash("sha256").update(JSON.stringify(parent.capsule)).digest("hex"));
   });
 
   it.each([["blank goal", ""], [

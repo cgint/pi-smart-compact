@@ -4,11 +4,15 @@
 
 **Provisional implementation finding (2026-08-28).** V0 is a working provider-facing overlay, not evidence of cost or task-quality improvement.
 
+### Cumulative repeated retirement V3
+
+V3 extends a valid V1/V2 first retirement with an append-only active receipt chain. Each later receipt stores the exact parent receipt/capsule SHA-256 hashes, generation, raw-delta entries, and a cumulative contiguous raw range. Provider input separates the prior structured capsule from the new raw delta, so it neither nests capsule text nor reconstructs omitted source facts. The latest valid active-chain receipt alone projects and recalls the full cumulative originals. Missing, malformed, tampered, inactive, or native-compacted chains fail closed; V1/V2 one-shot projection and recall remain compatible. Cumulative metrics and V3 delta metrics are persisted and rendered. The cumulative boundary remains stable, but every new capsule causes one suffix recache; this is not a general performance-benefit claim.
+
 ### Capsule-model V2
 
 V2 keeps active-agent episode selection but moves capsule authorship to exactly one configured secondary `provider/model` (`PI_EPISODE_RETIREMENT_MODEL`, default `google/gemini-3.7-flash`) at a validated Pi reasoning level (`PI_EPISODE_RETIREMENT_REASONING_EFFORT`, default `medium`). It has no active-model fallback: configuration, model/auth, completion, or capsule-validation failure aborts before append. V2 receipts persist model metadata and nested usage; existing V1 receipts remain projectable and recallable.
 
-Current automated evidence: `npm run precommit` passed TypeScript, 72 tests across 3 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
+Current automated evidence: `npm run precommit` passed TypeScript, 112 tests across 3 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
 
 ## Name and contract
 
@@ -51,7 +55,11 @@ One isolated synthetic run verified mechanics: active `openai-codex/gpt-5.6-terr
 
 ### Resolved-context fork smoke
 
-The isolated fork `/tmp/pi-resolved-context-fork.5WzhzX/sessions/2026-08-28T13-27-41-821Z_01a0488e-03fd-7736-b184-3c7e4fad4b37.jsonl` inherited discuss metadata `355812d2` and historical failed retirement call `f047c41b`. It appended exactly one V2 `google/gemini-3.7-flash` / `medium` / `capsule-v2` receipt: N=1, four source messages, 27,248 serialized source bytes → 978 exact capsule-text bytes; usage was 12,109 input / 671 output / 484 reasoning / 12,780 total / `$0.011598`. All four JavaScript `JSON.stringify` SHA-256 source fingerprints independently matched. The original session remained SHA-256 `2c303ac7141125e942b21dacc41ec8742c997fee7d3156705c343e7634824dde`. A no-tools follow-up recovered the RAM decision and next host-requirements planning step. This proves mechanics for this formerly rejected real shape, not 99% eligibility or general quality/cost benefit; repeated retirement remains unsupported.
+The isolated fork `/tmp/pi-resolved-context-fork.5WzhzX/sessions/2026-08-28T13-27-41-821Z_01a0488e-03fd-7736-b184-3c7e4fad4b37.jsonl` inherited discuss metadata `355812d2` and historical failed retirement call `f047c41b`. It appended exactly one V2 `google/gemini-3.7-flash` / `medium` / `capsule-v2` receipt: N=1, four source messages, 27,248 serialized source bytes → 978 exact capsule-text bytes; usage was 12,109 input / 671 output / 484 reasoning / 12,780 total / `$0.011598`. All four JavaScript `JSON.stringify` SHA-256 source fingerprints independently matched. The original session remained SHA-256 `2c303ac7141125e942b21dacc41ec8742c997fee7d3156705c343e7634824dde`. A no-tools follow-up recovered the RAM decision and next host-requirements planning step. This proves mechanics for this formerly rejected real shape, not 99% eligibility or general quality/cost benefit.
+
+### Resolved-context repeated-retirement V3 smoke
+
+The isolated session `/tmp/pi-v3-smoke.WPu94f/sessions/2026-08-28T15-13-43-413Z_v3-live-smoke.jsonl` produced receipts `[V2, V3]`. V3 generation 2 names parent entry `41e81785`; exact parent-receipt and prior-capsule hashes matched, as did all six raw source fingerprints. Its cumulative replacement metrics were 2 episodes / 6 messages / 6,992 bytes / 243 capsule bytes; delta metrics were 1 episode / 4 messages / 4,540 bytes / 259 prior-capsule bytes / 243 new-capsule bytes. Capsule-model usage was 2,707 input / 469 output / 410 reasoning / 3,176 total / `$0.003789`. A no-tools follow-up recovered `migrate service`, `blue-route`, and `verify-checksum`. This verifies chain mechanics only, not general quality, cache, or cost benefit; post-receipt native compaction remains refused and untested live.
 
 All artifacts are outside the repository:
 
@@ -120,10 +128,9 @@ Do not compare aggregate arm cost: copied arms retained the same session header 
 
 ## Remaining gaps
 
-- Repeated retirement is unsupported.
+- Post-receipt native compaction remains refused and untested live.
 - Autonomous bounded recall was not discovered.
 - Long-session behavioral sufficiency is untested.
-- Native compaction occurring after an existing retirement receipt is untested.
 
 ## Cheapest next test
 
