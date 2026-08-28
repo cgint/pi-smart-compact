@@ -8,7 +8,7 @@
 
 V2 keeps active-agent episode selection but moves capsule authorship to exactly one configured secondary `provider/model` (`PI_EPISODE_RETIREMENT_MODEL`, default `google/gemini-3.7-flash`) at a validated Pi reasoning level (`PI_EPISODE_RETIREMENT_REASONING_EFFORT`, default `medium`). It has no active-model fallback: configuration, model/auth, completion, or capsule-validation failure aborts before append. V2 receipts persist model metadata and nested usage; existing V1 receipts remain projectable and recallable.
 
-Final V2 automated evidence: `npm run precommit` passed TypeScript, 51 tests across 3 files (including 34 deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
+Current automated evidence: `npm run precommit` passed TypeScript, 72 tests across 3 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
 
 ## Name and contract
 
@@ -35,7 +35,9 @@ Exactly three code paths changed:
 
 Feature flag: `PI_EPISODE_RETIREMENT_ENABLED=true`. It is off by default.
 
-V0 rejects branches, native compaction/branch summaries, overlapping receipts, images/custom/nonstandard selected messages, incomplete tool protocols, and any branch-to-`context` event fingerprint/order mismatch. Model/thinking state entries are ignored because they do not project to provider messages.
+Resolved-context retirement uses public `ReadonlySessionManager.buildContextEntries()` and `buildSessionContext()`: context-producing raw entries (`message`, `custom_message`, `compaction`, `branch_summary`) are paired in order with resolved provider messages. It preserves an opaque exact prefix and validates only the candidate source-to-active interval: candidates must contain supported raw standard messages and balanced tool calls. It hard-refuses before stream/append on producer/message count mismatch or raw standard-message fingerprint mismatch. Discuss metadata, custom-message, compaction, branch-summary, old-image prefixes, and inactive branches are allowed; those shapes remain disallowed inside the candidate. Existing receipts refuse with the reason-specific repeated-retirement-unsupported error; recall still verifies receipt sources.
+
+Scoped census: **1,605 session files inspected; 791 (49.3%)** matched the former pre-selection rejection shape at `/Users/cgint/.pi/profiles/partner/agent/sessions`. The method used the last tree entry as active leaf, a `parentId` walk, and the global branch rule. Overlapping categories: 706 active custom metadata, 570 active `custom_message`, 232 active compaction, 12 active branch summary, and 101 global branch. The homelab cause was the old global/raw-shape rejection, not a raw-entry/resolved-message disparity. This is not a quality claim. Repeated retirement remains the next slice.
 
 ## Automated evidence
 
@@ -46,6 +48,10 @@ V0 rejects branches, native compaction/branch summaries, overlapping receipts, i
 ### V2 synthetic smoke
 
 One isolated synthetic run verified mechanics: active `openai-codex/gpt-5.6-terra` retired exactly two completed episodes (four source messages) through capsule model `google/gemini-3.7-flash` at `medium`. The V2 receipt had matching JavaScript SHA-256 fingerprints, `capsule-v2`, and nested usage of 1,091 input / 336 output / 171 reasoning / 1,427 total tokens / `$0.00207825`. The follow-up returned `ALPHA-731`, `blue-route`, and `verify-checksum`. This verifies the V2 protocol mechanics, not general task quality or cost benefit.
+
+### Resolved-context fork smoke
+
+The isolated fork `/tmp/pi-resolved-context-fork.5WzhzX/sessions/2026-08-28T13-27-41-821Z_01a0488e-03fd-7736-b184-3c7e4fad4b37.jsonl` inherited discuss metadata `355812d2` and historical failed retirement call `f047c41b`. It appended exactly one V2 `google/gemini-3.7-flash` / `medium` / `capsule-v2` receipt: N=1, four source messages, 27,248 serialized source bytes → 978 exact capsule-text bytes; usage was 12,109 input / 671 output / 484 reasoning / 12,780 total / `$0.011598`. All four JavaScript `JSON.stringify` SHA-256 source fingerprints independently matched. The original session remained SHA-256 `2c303ac7141125e942b21dacc41ec8742c997fee7d3156705c343e7634824dde`. A no-tools follow-up recovered the RAM decision and next host-requirements planning step. This proves mechanics for this formerly rejected real shape, not 99% eligibility or general quality/cost benefit; repeated retirement remains unsupported.
 
 All artifacts are outside the repository:
 
@@ -117,7 +123,7 @@ Do not compare aggregate arm cost: copied arms retained the same session header 
 - Repeated retirement is unsupported.
 - Autonomous bounded recall was not discovered.
 - Long-session behavioral sufficiency is untested.
-- Branches and native compaction/branch-summary paths remain unsupported.
+- Native compaction occurring after an existing retirement receipt is untested.
 
 ## Cheapest next test
 

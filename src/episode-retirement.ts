@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  buildSessionContext,
+  keyHint,
+  type ExtensionAPI,
+  type SessionManager,
+  sessionEntryToContextMessages,
+} from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
@@ -77,11 +83,22 @@ export type EpisodeRetirementReceipt =
   | EpisodeRetirementReceiptV2;
 type AnyReceipt = EpisodeRetirementReceipt;
 
+type SelectionReason =
+  | "insufficient completed episodes"
+  | "unsupported or nonstandard slot inside candidate"
+  | "candidate does not end in a completed assistant"
+  | "unmatched or out-of-order tool result"
+  | "open tool calls"
+  | "active user/source alignment";
 type Selection = {
   sourceEntryIds: string[];
   sourceFingerprints: string[];
   activeUserEntryId: string;
+  reason?: SelectionReason;
 };
+function refusedSelection(reason: SelectionReason): Selection {
+  return { sourceEntryIds: [], sourceFingerprints: [], activeUserEntryId: "", reason };
+}
 
 type Projection = { applied: true; messages: AgentMessage[] } | {
   applied: false;
@@ -117,23 +134,21 @@ export function fingerprintEntry(entry: SessionLikeEntry): string {
 export function selectLatestCompletedEpisodes(
   entries: SessionLikeEntry[],
   count: number,
-): Selection | undefined {
-  if (!Number.isInteger(count) || count < 1) return undefined;
-  if (
-    entries.some((entry) =>
-      !isPlainMessage(entry) || !isSupportedMessage(entry.message)
-    )
-  ) return undefined;
-
+): Selection {
+  if (!Number.isInteger(count) || count < 1) return refusedSelection("insufficient completed episodes");
   const userIndexes = entries.flatMap((entry, index) =>
-    entry.message!.role === "user" ? [index] : []
+    entry.type === "message" && entry.message?.role === "user" ? [index] : []
   );
-  if (userIndexes.length < count + 1) return undefined;
+  if (userIndexes.length < count + 1) return refusedSelection("insufficient completed episodes");
   const activeUserIndex = userIndexes.at(-1)!;
   const sourceStart = userIndexes[userIndexes.length - count - 1];
   const selected = entries.slice(sourceStart, activeUserIndex);
-  if (selected.length === 0 || selected.at(-1)!.message!.role !== "assistant") {
-    return undefined;
+  if (selected.length === 0) return refusedSelection("active user/source alignment");
+  if (selected.some((entry) => !isPlainMessage(entry) || !isSupportedMessage(entry.message))) {
+    return refusedSelection("unsupported or nonstandard slot inside candidate");
+  }
+  if (selected.at(-1)?.message?.role !== "assistant") {
+    return refusedSelection("candidate does not end in a completed assistant");
   }
 
   const openToolCalls = new Set<string>();
@@ -145,10 +160,10 @@ export function selectLatestCompletedEpisodes(
       ) if (part.type === "toolCall" && part.id) openToolCalls.add(part.id);
     }
     if (message.role === "toolResult") {
-      if (!openToolCalls.delete(message.toolCallId as string)) return undefined;
+      if (!openToolCalls.delete(message.toolCallId as string)) return refusedSelection("unmatched or out-of-order tool result");
     }
   }
-  if (openToolCalls.size > 0) return undefined;
+  if (openToolCalls.size > 0) return refusedSelection("open tool calls");
 
   return {
     sourceEntryIds: selected.map((entry) => entry.id),
@@ -206,11 +221,6 @@ function validatedRange(
     entries[activeIndex].message.role !== "user" ||
     !isSupportedMessage(entries[activeIndex].message)
   ) return { applied: false, reason: "active episode is not protected" };
-  if (
-    entries.some((entry) =>
-      !isPlainMessage(entry) || !isSupportedMessage(entry.message)
-    )
-  ) return { applied: false, reason: "unsupported session shape" };
   return { start, activeIndex };
 }
 
@@ -264,18 +274,33 @@ export function projectEventMessages(
   return { applied: true, messages };
 }
 
-function activePathIsSupported(entries: SessionLikeEntry[]): boolean {
-  return !entries.some((entry) =>
-    entry.type === "compaction" || entry.type === "branch_summary" ||
-    (entry.type === "custom" && entry.customType !== RECEIPT_TYPE)
-  );
-}
-
-function treeHasBranch(nodes: Array<{ children?: unknown[] }>): boolean {
-  return nodes.some((node) =>
-    (node.children?.length ?? 0) > 1 ||
-    treeHasBranch((node.children ?? []) as Array<{ children?: unknown[] }>)
-  );
+/** Pair public context entries with their exact public slot payloads, then verify canonical context parity. */
+type ContextReadonlyManager = Pick<SessionManager,
+  "buildContextEntries" | "getEntries" | "getLeafId">;
+function resolvedSlots(manager: ContextReadonlyManager): SessionLikeEntry[] {
+  const slots: SessionLikeEntry[] = [];
+  for (const entry of manager.buildContextEntries()) {
+    for (const message of sessionEntryToContextMessages(entry)) {
+      if (entry.type === "message" && createHash("sha256")
+        .update(JSON.stringify(entry.message)).digest("hex") !== createHash("sha256")
+        .update(JSON.stringify(message)).digest("hex")) {
+        throw new Error("Episode retirement refused: resolved standard-message fingerprint mismatch.");
+      }
+      slots.push({ ...entry, message } as SessionLikeEntry);
+    }
+  }
+  const canonical = buildSessionContext(manager.getEntries(), manager.getLeafId()).messages;
+  if (slots.length !== canonical.length) {
+    throw new Error("Episode retirement refused: resolved entry/message count mismatch.");
+  }
+  for (let index = 0; index < slots.length; index++) {
+    const slot = slots[index];
+    const canonicalFingerprint = createHash("sha256").update(JSON.stringify(canonical[index])).digest("hex");
+    if (fingerprintEntry(slot) !== canonicalFingerprint) {
+      throw new Error("Episode retirement refused: resolved entry/message fingerprint mismatch.");
+    }
+  }
+  return slots;
 }
 
 function getReceipts(entries: SessionLikeEntry[]): AnyReceipt[] {
@@ -482,25 +507,16 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           "Episode retirement requires a non-empty bounded continuationGoal.",
         );
       }
-      if (
-        !activePathIsSupported(branch) ||
-        treeHasBranch(
-          ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>,
-        ) || getReceipts(branch).length > 0
-      ) {
-        throw new Error(
-          "Episode retirement refused: unsupported or overlapping session shape.",
-        );
+      if (getReceipts(branch).length > 0) {
+        throw new Error("Episode retirement refused: repeated retirement is unsupported.");
       }
-      const messageEntries = branch.filter(isPlainMessage);
+      const contextEntries = resolvedSlots(ctx.sessionManager);
       const selection = selectLatestCompletedEpisodes(
-        messageEntries,
+        contextEntries,
         params.latestCompletedEpisodes,
       );
-      if (!selection) {
-        throw new Error(
-          "Episode retirement refused: no unambiguous completed episode suffix.",
-        );
+      if (selection.reason) {
+        throw new Error("Episode retirement refused: " + selection.reason + ".");
       }
       const configured = parseCapsuleModel();
       const reasoningEffort = configuredReasoningEffort();
@@ -534,10 +550,10 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       if (signal?.aborted) {
         throw new Error("Episode retirement capsule request aborted.");
       }
-      const active = messageEntries.find((entry) =>
+      const active = contextEntries.find((entry) =>
         entry.id === selection.activeUserEntryId
       )!.message!;
-      const selected = messageEntries.filter((entry) =>
+      const selected = contextEntries.filter((entry) =>
         selection.sourceEntryIds.includes(entry.id)
       );
       // Same public auth + streamSimple boundary used by pi-ai-consortium.
@@ -609,12 +625,6 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
     executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
-      if (
-        !activePathIsSupported(branch) ||
-        treeHasBranch(
-          ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>,
-        )
-      ) throw new Error("Episode recall refused: unsupported session shape.");
       const receipts = getReceipts(branch);
       if (receipts.length !== 1) {
         throw new Error(
@@ -671,15 +681,15 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
   pi.on("context", (event, ctx): any => {
     const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
     const receipts = getReceipts(branch);
-    if (
-      !activePathIsSupported(branch) ||
-      treeHasBranch(
-        ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>,
-      ) || receipts.length !== 1
-    ) return;
-    const messageEntries = branch.filter(isPlainMessage);
+    if (receipts.length !== 1) return;
+    let contextEntries: SessionLikeEntry[];
+    try {
+      contextEntries = resolvedSlots(ctx.sessionManager);
+    } catch {
+      return;
+    }
     const projected = projectEventMessages(
-      messageEntries,
+      contextEntries,
       event.messages as AgentMessage[],
       receipts[0],
     );

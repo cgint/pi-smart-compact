@@ -11,7 +11,7 @@ afterEach(() => {
   for (const key of Object.keys(process.env)) if (key.startsWith("PI_EPISODE_RETIREMENT_")) delete process.env[key];
   mockStreamSimple.mockReset();
 });
-import { convertToLlm } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, convertToLlm, SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   applyEpisodeRetirement,
   selectLatestCompletedEpisodes,
@@ -41,6 +41,32 @@ const activeEpisode = [user("u2", "continue from the investigation")];
 const entries = [...completeMultiToolEpisode, ...activeEpisode];
 const fingerprint = fingerprintEntry;
 const capsule = { objective: "Understand the repository.", findings: ["Repository inspected."], decisions: [], unresolved: [], nextStep: "Use the findings." };
+const publicSession = (branch: SessionLikeEntry[]) => {
+  branch.forEach((entry, index) => { entry.parentId = index ? branch[index - 1].id : null; });
+  return {
+    getBranch: () => branch, getTree: () => [], getEntries: () => branch,
+    getLeafId: () => branch.at(-1)?.id ?? null, buildContextEntries: () => branch,
+  };
+};
+const extensionHarness = (manager: SessionManager) => {
+  const tools: any[] = [], handlers: Record<string, any> = {}, appended: unknown[] = [];
+  const pi: any = {
+    registerTool: (tool: any) => tools.push(tool),
+    on: (name: string, handler: any) => { handlers[name] = handler; },
+    appendEntry: (_type: string, data: unknown) => {
+      appended.push(data);
+      manager.appendCustomEntry("episode-retirement", data);
+    },
+  };
+  process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
+  mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
+  registerEpisodeRetirement(pi);
+  return {
+    retire: tools.find((tool) => tool.name === "retire_episodes"), handlers, appended,
+    streams: () => mockStreamSimple.mock.calls.length,
+    ctx: { sessionManager: manager, modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) } },
+  };
+};
 
 describe("episode retirement", () => {
   it("selects and projects one complete multi-tool episode before the active episode", () => {
@@ -112,7 +138,7 @@ describe("episode retirement", () => {
     const recall = tools.find((tool) => tool.name === "recall_episode");
     const model = { provider: "google", id: "gemini-3.7-flash" };
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: { totalTokens: 1 } }) });
-    const ctx: any = { sessionManager: { getBranch: () => branch, getTree: () => [] }, modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }) } };
+    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }) } };
     const accepted = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue safely" }, undefined, undefined, ctx);
     expect(accepted.isError).toBeUndefined();
     expect(persisted).toHaveLength(1);
@@ -193,7 +219,7 @@ describe("episode retirement", () => {
     registerEpisodeRetirement(pi);
     const retire = tools.find((tool) => tool.name === "retire_episodes");
     expect(Object.keys(retire.parameters.properties)).toEqual(["latestCompletedEpisodes", "continuationGoal"]);
-    const result = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "finish safely with token=goalSecret" }, undefined, (update: unknown) => progress.push(update), { sessionManager: { getBranch: () => branch, getTree: () => [] }, modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }), complete: () => { throw new Error("complete must not be called"); } } });
+    const result = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "finish safely with token=goalSecret" }, undefined, (update: unknown) => progress.push(update), { sessionManager: publicSession(branch), modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }), complete: () => { throw new Error("complete must not be called"); } } });
     expect(progress.length).toBeGreaterThan(0);
     expect(fingerprintEntry(branch[0])).toBe(originalFingerprint);
     expect((branch[0].message!.content as Array<{ text: string }>)[0].text).toBe(originalText);
@@ -225,6 +251,127 @@ describe("episode retirement", () => {
     expect(expanded.text).toContain(expectedCapsuleText);
     expect(expanded.text).toContain("Provenance: u1, a1, t1, a2, t2, a3");
     delete process.env.PI_EPISODE_RETIREMENT_ENABLED; delete process.env.PI_EPISODE_RETIREMENT_MODEL; delete process.env.PI_EPISODE_RETIREMENT_REASONING_EFFORT;
+  });
+
+  it("retires against resolved discuss context while retaining an exact custom-message prefix", async () => {
+    process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
+    const tools: any[] = [];
+    const handlers: Record<string, any> = {};
+    const raw = [
+      { type: "custom", customType: "discuss", id: "mode", parentId: null, timestamp: "mode" },
+      { type: "custom_message", customType: "discuss", content: "Discuss mode instructions", display: false, id: "discuss-message", parentId: "mode", timestamp: "cm" },
+      user("u1", "settled request"), assistant("a1", "settled answer"), user("u2", "active request"),
+    ] as SessionLikeEntry[];
+    const manager = publicSession(raw.filter((entry) => entry.customType !== "episode-retirement"));
+    const resolved = buildSessionContext(manager.getEntries() as any, manager.getLeafId()).messages;
+    const appended: unknown[] = [];
+    const pi: any = {
+      registerTool: (tool: any) => tools.push(tool),
+      on: (name: string, handler: any) => { handlers[name] = handler; },
+      appendEntry: (_type: string, data: unknown) => { appended.push(data); raw.push({ type: "custom", customType: "episode-retirement", id: "receipt", parentId: "u2", timestamp: "receipt", data }); },
+    };
+    mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
+    registerEpisodeRetirement(pi);
+    const ctx: any = {
+      sessionManager: {
+        ...manager,
+        getBranch: () => raw,
+      },
+      modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) },
+    };
+    const result = await tools.find((tool) => tool.name === "retire_episodes").execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    expect(result.isError).toBeUndefined();
+    expect(appended).toHaveLength(1);
+    const next = await handlers.context({ messages: resolved }, ctx);
+    expect(next.messages).toHaveLength(2);
+    expect(next.messages[0]).toBe(resolved[0]);
+    expect(next.messages[1].content[0].text).toContain("CONTINUATION CAPSULE");
+  });
+
+  it("preserves the opaque compaction-summary prefix by exact event reference", async () => {
+    const manager = SessionManager.inMemory();
+    const prefixUser = manager.appendMessage(user("ignored", "before compaction").message as any);
+    manager.appendMessage(assistant("ignored", "before compaction answer").message as any);
+    manager.appendCompaction("opaque compacted history", prefixUser, 10);
+    manager.appendMessage(user("ignored", "retire this").message as any);
+    manager.appendMessage(assistant("ignored", "settled").message as any);
+    manager.appendMessage(user("ignored", "active").message as any);
+    const { retire, handlers, appended, ctx } = extensionHarness(manager);
+    const before = manager.buildSessionContext().messages;
+    await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    const after = await handlers.context({ messages: before }, ctx);
+    expect(appended).toHaveLength(1);
+    expect(after.messages.slice(0, -1)).toEqual(before.slice(0, -3));
+    expect(after.messages[0]).toBe(before[0]);
+  });
+
+  it("preserves the opaque branch_summary prefix by exact event reference", async () => {
+    const manager = SessionManager.inMemory();
+    manager.appendMessage(user("ignored", "before summary").message as any);
+    const branchPoint = manager.appendMessage(assistant("ignored", "before summary answer").message as any);
+    manager.branchWithSummary(branchPoint, "opaque branch history");
+    manager.appendMessage(user("ignored", "retire this").message as any);
+    manager.appendMessage(assistant("ignored", "settled").message as any);
+    manager.appendMessage(user("ignored", "active").message as any);
+    const { retire, handlers, ctx } = extensionHarness(manager);
+    const before = manager.buildSessionContext().messages;
+    await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    const after = await handlers.context({ messages: before }, ctx);
+    expect(after.messages.slice(0, -1)).toEqual(before.slice(0, -3));
+    expect(after.messages[2]).toBe(before[2]);
+  });
+
+  it("ignores an inactive global branch because buildContextEntries selects the active branch", async () => {
+    const manager = SessionManager.inMemory();
+    const root = manager.appendMessage(user("ignored", "root").message as any);
+    manager.appendMessage(assistant("ignored", "inactive answer").message as any);
+    manager.branch(root);
+    manager.appendMessage(user("ignored", "retire this").message as any);
+    manager.appendMessage(assistant("ignored", "settled").message as any);
+    manager.appendMessage(user("ignored", "active").message as any);
+    const { retire, appended, ctx } = extensionHarness(manager);
+    await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    expect(appended).toHaveLength(1);
+    expect(manager.getEntries()).toHaveLength(6);
+    expect(manager.buildContextEntries()).toHaveLength(5);
+  });
+
+  it("preserves an old image prefix while refusing an image inside the selected episode", async () => {
+    const manager = SessionManager.inMemory();
+    manager.appendMessage({ role: "user", content: [{ type: "image", data: "old", mimeType: "image/png" }], timestamp: 1 } as any);
+    manager.appendMessage(assistant("ignored", "old answer").message as any);
+    manager.appendMessage(user("ignored", "retire this").message as any);
+    manager.appendMessage(assistant("ignored", "settled").message as any);
+    manager.appendMessage(user("ignored", "active").message as any);
+    const before = manager.buildSessionContext().messages;
+    const prefix = before[0];
+    const accepted = extensionHarness(manager);
+    await accepted.retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, accepted.ctx);
+    const projected = await accepted.handlers.context({ messages: before }, accepted.ctx);
+    expect(projected.messages[0]).toBe(prefix);
+
+    const refusedManager = SessionManager.inMemory();
+    refusedManager.appendMessage({ role: "user", content: [{ type: "image", data: "selected", mimeType: "image/png" }], timestamp: 1 } as any);
+    refusedManager.appendMessage(assistant("ignored", "settled").message as any);
+    refusedManager.appendMessage(user("ignored", "active").message as any);
+    const refused = extensionHarness(refusedManager);
+    const streamsBeforeRefusal = refused.streams();
+    await expect(refused.retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, refused.ctx)).rejects.toThrow("unsupported or nonstandard slot inside candidate");
+    expect(refused.streams()).toBe(streamsBeforeRefusal);
+    expect(refused.appended).toHaveLength(0);
+  });
+
+  it("fails closed before stream or append when raw standard-message normalization changes its fingerprint", async () => {
+    const manager = SessionManager.inMemory();
+    manager.appendMessage(user("ignored", "retire this").message as any);
+    manager.appendMessage(assistant("ignored", "settled").message as any);
+    manager.appendMessage(user("ignored", "active").message as any);
+    const raw = manager.getEntries();
+    (raw[0] as any).message.content = null;
+    const { retire, appended, streams, ctx } = extensionHarness(manager);
+    await expect(retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx)).rejects.toThrow("resolved standard-message fingerprint mismatch");
+    expect(streams()).toBe(0);
+    expect(appended).toHaveLength(0);
   });
 
   it("preserves the provider prefix while removing only the selected suffix", () => {

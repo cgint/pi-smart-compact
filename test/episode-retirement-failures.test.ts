@@ -8,6 +8,7 @@ import registerEpisodeRetirement, {
   CAPSULE_MAX_JSON_CHARS,
   CONTINUATION_GOAL_MAX_CHARS,
   fingerprintEntry,
+  selectLatestCompletedEpisodes,
   type SessionLikeEntry,
 } from "../src/episode-retirement.js";
 
@@ -24,11 +25,12 @@ const msg = (id: string, role: string, text: string): SessionLikeEntry => ({
   timestamp: id,
   message: { role, content: [{ type: "text", text }], timestamp: 1 },
 });
-const base = () => [
-  msg("u1", "user", "settled"),
-  msg("a1", "assistant", "done"),
-  msg("u2", "user", "active"),
-];
+const base = () => {
+  const entries = [msg("u1", "user", "settled"), msg("a1", "assistant", "done"), msg("u2", "user", "active")];
+  entries[1].parentId = "u1";
+  entries[2].parentId = "a1";
+  return entries;
+};
 const good = {
   objective: "o",
   findings: [],
@@ -74,7 +76,13 @@ function harness(
     original,
     calls: () => stream.mock.calls.length,
     ctx: {
-      sessionManager: { getBranch: () => branch, getTree: () => [] },
+      sessionManager: {
+        getBranch: () => branch,
+        getTree: () => [],
+        getEntries: () => branch,
+        getLeafId: () => branch.at(-1)?.id ?? null,
+        buildContextEntries: () => branch,
+      },
       modelRegistry: registry,
     },
   };
@@ -98,6 +106,24 @@ async function fails(
 }
 
 describe("episode retirement failures", () => {
+  it.each([
+    ["count", () => [msg("u", "user", "only active")], "insufficient completed episodes"],
+    ["unsupported candidate", () => [{ ...msg("u1", "user", "selected"), message: { role: "user", content: [{ type: "image", data: "x" }], timestamp: 1 } as any }, msg("a1", "assistant", "done"), msg("u2", "user", "active")], "unsupported or nonstandard slot inside candidate"],
+    ["assistant boundary", () => [msg("u1", "user", "selected"), msg("u2", "user", "active")], "candidate does not end in a completed assistant"],
+    ["unmatched tool", () => [msg("u1", "user", "selected"), { ...msg("t", "toolResult", "orphan"), message: { role: "toolResult", toolCallId: "missing", content: [{ type: "text", text: "orphan" }], timestamp: 1 } as any }, msg("a1", "assistant", "done"), msg("u2", "user", "active")], "unmatched or out-of-order tool result"],
+    ["open tool", () => [msg("u1", "user", "selected"), { ...msg("a1", "assistant", ""), message: { role: "assistant", content: [{ type: "toolCall", id: "open", name: "bash", arguments: {} }], timestamp: 1 } as any }, msg("a2", "assistant", "done"), msg("u2", "user", "active")], "open tool calls"],
+  ])("selection reports the %s refusal reason", (_name, createEntries, reason) => {
+    expect(selectLatestCompletedEpisodes(createEntries() as SessionLikeEntry[], 1).reason).toBe(reason);
+  });
+
+  it("existing receipt refuses before stream or append with its specific reason", async () => {
+    const h = harness();
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
+    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("repeated retirement is unsupported");
+    expect(h.calls()).toBe(0);
+    expect(h.appended).toHaveLength(0);
+  });
+
   it.each([["blank goal", ""], [
     "oversize goal",
     "x".repeat(CONTINUATION_GOAL_MAX_CHARS + 1),
@@ -283,13 +309,6 @@ describe("episode retirement failures", () => {
       h.branch[0].message!.content = [{ type: "text", text: "changed" }];
     }],
     ["outside", () => undefined],
-    ["unsupported", (h: any) =>
-      h.branch.push({
-        type: "compaction",
-        id: "c",
-        parentId: null,
-        timestamp: "c",
-      })],
   ])("recall refusal %s throws", async (kind, alter: any) => {
     const h = harness();
     const receipt: any = {
@@ -320,6 +339,41 @@ describe("episode retirement failures", () => {
         h.ctx,
       ),
     ).rejects.toThrow();
+  });
+  it.each([
+    ["resolved entry/message count mismatch", (h: any) => {
+      h.ctx.sessionManager.buildContextEntries = () => h.branch.slice(0, 2);
+    }],
+    ["canonical entry/message parity mismatch", (h: any) => {
+      h.ctx.sessionManager.getEntries = () => h.branch.slice(0, 2);
+    }],
+  ])("resolved context parity refuses before stream or append", async (_name, alter: any) => {
+    const h = harness();
+    alter(h);
+    await fails(h);
+    expect(h.calls()).toBe(0);
+  });
+  it.each([
+    ["image", (h: any) => {
+      h.branch[1].message!.content = [{ type: "image", data: "new" }];
+      h.original = structuredClone(h.branch);
+    }],
+    ["custom_message", (h: any) => {
+      h.branch.splice(1, 0, { type: "custom_message", id: "cm", parentId: "u1", timestamp: "cm" });
+      h.ctx.sessionManager.buildContextEntries = () => h.branch;
+      h.ctx.sessionManager.buildSessionContext = () => ({ messages: [
+        h.branch[0].message,
+        { role: "assistant", content: [{ type: "text", text: "custom" }], timestamp: 1 },
+        h.branch[2].message,
+        h.branch[3].message,
+      ] });
+      h.original = structuredClone(h.branch);
+    }],
+  ])("unsupported candidate %s refuses before stream or append", async (_name, alter: any) => {
+    const h = harness();
+    alter(h);
+    await fails(h);
+    expect(h.calls()).toBe(0);
   });
   it.each([
     ["invalid", "{"],
