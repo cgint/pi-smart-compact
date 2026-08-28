@@ -4,7 +4,7 @@
 
 **Provisional implementation finding (2026-08-28).** V0 is a working provider-facing overlay, not evidence of cost or task-quality improvement.
 
-### Cumulative repeated retirement V3
+### V3 forward retirement + V4 corrective deepening
 
 V3 extends a valid V1/V2 first retirement with an append-only active receipt chain. Each later receipt stores the exact parent receipt/capsule SHA-256 hashes, generation, raw-delta entries, and a cumulative contiguous raw range. Provider input separates the prior structured capsule from the new raw delta, so it neither nests capsule text nor reconstructs omitted source facts. The latest valid active-chain receipt alone projects and recalls the full cumulative originals. Missing, malformed, tampered, inactive, or native-compacted chains fail closed; V1/V2 one-shot projection and recall remain compatible. Cumulative metrics and V3 delta metrics are persisted and rendered. The cumulative boundary remains stable, but every new capsule causes one suffix recache; this is not a general performance-benefit claim.
 
@@ -12,7 +12,7 @@ V3 extends a valid V1/V2 first retirement with an append-only active receipt cha
 
 V2 keeps active-agent episode selection but moves capsule authorship to exactly one configured secondary `provider/model` (`PI_EPISODE_RETIREMENT_MODEL`, default `google/gemini-3.7-flash`) at a validated Pi reasoning level (`PI_EPISODE_RETIREMENT_REASONING_EFFORT`, default `medium`). It has no active-model fallback: configuration, model/auth, completion, or capsule-validation failure aborts before append. V2 receipts persist model metadata and nested usage; existing V1 receipts remain projectable and recallable.
 
-Current automated evidence: `npm run precommit` passed TypeScript, 118 tests across 4 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
+Current automated evidence: `npm run precommit` passed TypeScript, 160 tests across 4 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
 
 ## Name and contract
 
@@ -60,6 +60,12 @@ The isolated fork `/tmp/pi-resolved-context-fork.5WzhzX/sessions/2026-08-28T13-2
 ### Resolved-context repeated-retirement V3 smoke
 
 The isolated session `/tmp/pi-v3-smoke.WPu94f/sessions/2026-08-28T15-13-43-413Z_v3-live-smoke.jsonl` produced receipts `[V2, V3]`. V3 generation 2 names parent entry `41e81785`; exact parent-receipt and prior-capsule hashes matched, as did all six raw source fingerprints. Its cumulative replacement metrics were 2 episodes / 6 messages / 6,992 bytes / 243 capsule bytes; delta metrics were 1 episode / 4 messages / 4,540 bytes / 259 prior-capsule bytes / 243 new-capsule bytes. Capsule-model usage was 2,707 input / 469 output / 410 reasoning / 3,176 total / `$0.003789`. A no-tools follow-up recovered `migrate service`, `blue-route`, and `verify-checksum`. This verifies chain mechanics only, not general quality, cache, or cost benefit; post-receipt native compaction remains refused and untested live.
+
+### Inspect-guided V4 corrective-deepening smoke
+
+V3 remains exact-forward; V4 supersedes the latest projection with before + parent + after raw provenance and one non-nested capsule. Strict chain, tamper, child-generation, renderer, and pre-egress validation fail closed.
+
+Final isolated session `/tmp/pi-v4-inspect-smoke.0Fg2GW/sessions/2026-08-28T17-00-44-509Z_inspect-v4.jsonl` called `inspect_episode_retirement` then chose N=3 and emitted `[V2, V4]`. Parent/capsule hashes, all fingerprints, and unique cumulative IDs matched. V4 had before 1 episode / 2 messages / 2,895 B; after 1 / 4 / 4,825 B; cumulative 3 / 8 / 8,589 B; prior 591 → new 611 capsule bytes; usage 4,764 input / 643 output / 535 reasoning / 5,407 total / `$0.00598425`. A no-tools recovery returned `ALPHA-731`, `blue-route`, and `verify-checksum`. Measured progression: without mechanical preview the agent chose N1/V3; recall-only chose N2/V4 at the same boundary; candidate inspection enabled N3 deepening. This is mechanics evidence only, not general benefit.
 
 ### Native /retire prompt
 

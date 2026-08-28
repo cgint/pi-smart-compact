@@ -100,10 +100,31 @@ export type EpisodeRetirementReceiptV3 = ReceiptBase & {
     newCapsuleTextBytes: number;
   };
 };
+export type EpisodeRetirementReceiptV4 = ReceiptBase & {
+  version: 4;
+  generation: number;
+  parentReceiptEntryId: string;
+  parentReceiptFingerprint: string;
+  priorCapsuleFingerprint: string;
+  newlyIncorporatedBeforeParentEntries: Array<{ id: string; fingerprint: string }>;
+  newlyCompletedAfterParentEntries: Array<{ id: string; fingerprint: string }>;
+  provider: string;
+  model: string;
+  reasoningEffort: ThinkingLevel;
+  promptVersion: "capsule-v4";
+  usage: Record<string, unknown>;
+  compositionMetrics: {
+    earlierEpisodeCount: number; earlierMessageCount: number; earlierSourceBytes: number;
+    laterEpisodeCount: number; laterMessageCount: number; laterSourceBytes: number;
+    cumulativeMessageCount: number; cumulativeSourceBytes: number;
+    priorCapsuleTextBytes: number; newCapsuleTextBytes: number;
+  };
+};
 export type EpisodeRetirementReceipt =
   | EpisodeRetirementReceiptV1
   | EpisodeRetirementReceiptV2
-  | EpisodeRetirementReceiptV3;
+  | EpisodeRetirementReceiptV3
+  | EpisodeRetirementReceiptV4;
 type AnyReceipt = EpisodeRetirementReceipt;
 type ReceiptEntry = SessionLikeEntry & { data: AnyReceipt };
 const hashJson = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -336,6 +357,13 @@ function getReceiptEntries(entries: SessionLikeEntry[]): ReceiptEntry[] {
 function receiptRangeIsValid(entries: SessionLikeEntry[], receipt: AnyReceipt): boolean {
   return !("applied" in validatedRange(entries, receipt));
 }
+function exactCompletedInterval(entries: SessionLikeEntry[], start: number, active: number): boolean {
+  const interval = entries.slice(start, active);
+  const completedEpisodes = interval.filter((entry) => entry.type === "message" && entry.message?.role === "user").length;
+  const selection = selectLatestCompletedEpisodes(entries.slice(0, active + 1), completedEpisodes);
+  return completedEpisodes > 0 && selection.sourceEntryIds.length === interval.length &&
+    selection.sourceEntryIds.every((id, index) => id === interval[index].id);
+}
 type RawMetrics = { completedEpisodeCount: number; sourceMessageCount: number; sourceMessageBytes: number };
 function requiredRepeatedEpisodeCount(entries: SessionLikeEntry[], parentActiveId: string, activeId: string): number | undefined {
   const start = entries.findIndex((entry) => entry.id === parentActiveId);
@@ -355,6 +383,48 @@ function rawMetrics(entries: SessionLikeEntry[], ids: string[]): RawMetrics {
     sourceMessageBytes: Buffer.byteLength(JSON.stringify(source.map((entry) => entry.message))),
   };
 }
+type RetirementRelation = "initial" | "forward" | "recompose" | "deepen";
+type RetirementPreflight = {
+  selection: Selection;
+  relation: RetirementRelation;
+  before: SessionLikeEntry[];
+  after: SessionLikeEntry[];
+  parentSource: SessionLikeEntry[];
+  emitsV4: boolean;
+} | { reason: string };
+function preflightRetirement(
+  entries: SessionLikeEntry[],
+  parentEntry: ReceiptEntry | undefined,
+  count: number,
+): RetirementPreflight {
+  const selection = selectLatestCompletedEpisodes(entries, count);
+  if (selection.reason) return { reason: selection.reason };
+  if (!parentEntry) return { selection, relation: "initial", before: [], after: [], parentSource: [], emitsV4: false };
+  const parentRange = validatedRange(entries, parentEntry.data);
+  if ("applied" in parentRange) return { reason: "parent range is unavailable" };
+  const selectedStart = entries.findIndex((entry) => entry.id === selection.sourceEntryIds[0]);
+  const activeIndex = entries.findIndex((entry) => entry.id === selection.activeUserEntryId);
+  const after = entries.slice(parentRange.activeIndex, activeIndex);
+  const exactForward = selectedStart === parentRange.activeIndex &&
+    selection.sourceEntryIds.length === after.length &&
+    selection.sourceEntryIds.every((id, index) => id === after[index]?.id);
+  const parentSource = entries.slice(parentRange.start, parentRange.activeIndex);
+  const before = entries.slice(selectedStart, parentRange.start);
+  const recomposed = selectedStart <= parentRange.start &&
+    JSON.stringify(selection.sourceEntryIds) === JSON.stringify([...before, ...parentSource, ...after].map((entry) => entry.id));
+  if (!exactForward && !recomposed) return { reason: "selection partially overlaps or gaps the parent range" };
+  const emitsV4 = recomposed || parentEntry.data.version === 1 || parentEntry.data.version === 4;
+  if (emitsV4 && after.length === 0) return { reason: "V4 requires a completed after-parent interval" };
+  if (!emitsV4 && !exactForward) return { reason: "repeated retirement requires an exact forward delta" };
+  return {
+    selection,
+    relation: exactForward ? "forward" : before.length === 0 ? "recompose" : "deepen",
+    before,
+    after,
+    parentSource,
+    emitsV4,
+  };
+}
 type ReceiptAssessment = { state: "none" | "malformed" | "compacted" } | { state: "valid"; entry: ReceiptEntry };
 function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: SessionLikeEntry[]): ReceiptAssessment {
   const receiptSlots = branch.filter((entry) => entry.type === "custom" && entry.customType === RECEIPT_TYPE);
@@ -365,12 +435,30 @@ function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: Session
   if (branch.slice(branch.findIndex((entry) => entry.id === latest.id) + 1).some((entry) => entry.type === "compaction")) return { state: "compacted" };
   const validate = (entry: ReceiptEntry): boolean => {
     if (!receiptRangeIsValid(contextEntries, entry.data)) return false;
-    if (entry.data.version !== 3) return true;
+    if (entry.data.version !== 3 && entry.data.version !== 4) return true;
     const receipt = entry.data;
     const parent = receipts.find((candidate) => candidate.id === receipt.parentReceiptEntryId);
     if (!parent || parent !== receipts[receipts.indexOf(entry) - 1] || !validate(parent)) return false;
-    const expectedGeneration = parent.data.version === 3 ? parent.data.generation + 1 : 2;
+    const expectedGeneration = parent.data.version === 3 || parent.data.version === 4 ? parent.data.generation + 1 : 2;
     const cumulative = rawMetrics(contextEntries, receipt.sourceEntryIds);
+    if (receipt.version === 4) {
+      const parentRange = validatedRange(contextEntries, parent.data);
+      if ("applied" in parentRange) return false;
+      const start = contextEntries.findIndex((item) => item.id === receipt.sourceEntryIds[0]);
+      const before = contextEntries.slice(start, parentRange.start);
+      const after = contextEntries.slice(parentRange.activeIndex, contextEntries.findIndex((item) => item.id === receipt.activeUserEntryId));
+      const expectedIds = [...before, ...contextEntries.slice(parentRange.start, parentRange.activeIndex), ...after].map((item) => item.id);
+      if (!exactCompletedInterval(contextEntries, start, contextEntries.findIndex((item) => item.id === receipt.activeUserEntryId))) return false;
+      const earlier = rawMetrics(contextEntries, before.map((item) => item.id));
+      const later = rawMetrics(contextEntries, after.map((item) => item.id));
+      const expectedReplacement = { ...cumulative, capsuleTextBytes: Buffer.byteLength(capsuleText(receipt.capsule, receipt.sourceEntryIds)) };
+      const expectedComposition = { earlierEpisodeCount: earlier.completedEpisodeCount, earlierMessageCount: earlier.sourceMessageCount, earlierSourceBytes: earlier.sourceMessageBytes, laterEpisodeCount: later.completedEpisodeCount, laterMessageCount: later.sourceMessageCount, laterSourceBytes: later.sourceMessageBytes, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parent.data.capsule, parent.data.sourceEntryIds)), newCapsuleTextBytes: expectedReplacement.capsuleTextBytes };
+      return receipt.generation === expectedGeneration && JSON.stringify(receipt.sourceEntryIds) === JSON.stringify(expectedIds) &&
+        JSON.stringify(receipt.replacementMetrics) === JSON.stringify(expectedReplacement) && JSON.stringify(receipt.compositionMetrics) === JSON.stringify(expectedComposition) &&
+        receipt.parentReceiptFingerprint === hashJson(parent.data) && receipt.priorCapsuleFingerprint === hashJson(parent.data.capsule) &&
+        JSON.stringify(receipt.newlyIncorporatedBeforeParentEntries) === JSON.stringify(before.map((item) => ({ id: item.id, fingerprint: fingerprintEntry(item) }))) &&
+        JSON.stringify(receipt.newlyCompletedAfterParentEntries) === JSON.stringify(after.map((item) => ({ id: item.id, fingerprint: fingerprintEntry(item) })));
+    }
     const deltaIds = receipt.sourceEntryIds.slice(parent.data.sourceEntryIds.length);
     const requiredDeltaEpisodes = requiredRepeatedEpisodeCount(contextEntries, parent.data.activeUserEntryId, receipt.activeUserEntryId);
     if (requiredDeltaEpisodes === undefined) return false;
@@ -413,7 +501,7 @@ function hasReplacementMetrics(value: unknown): boolean {
 }
 function isReceipt(value: unknown): value is AnyReceipt {
   if (
-    !isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+    !isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
     value.kind !== RECEIPT_TYPE ||
     !Array.isArray(value.sourceEntryIds) ||
     !value.sourceEntryIds.every((id) => typeof id === "string") ||
@@ -434,8 +522,24 @@ function isReceipt(value: unknown): value is AnyReceipt {
     typeof value.model === "string" && value.model.length > 0 &&
     THINKING_LEVELS.has(value.reasoningEffort as ThinkingLevel) && isRecord(value.usage);
   if (value.version === 2) return providerFields && value.promptVersion === "capsule-v2";
-  const delta = value.deltaMetrics;
   const exactKeys = (record: Record<string, unknown>, keys: string[]) => Object.keys(record).length === keys.length && keys.every((key) => key in record);
+  const exactEntries = (entries: unknown, nonempty: boolean) => Array.isArray(entries) && (!nonempty || entries.length > 0) &&
+    new Set(entries.map((item) => isRecord(item) ? item.id : "")).size === entries.length &&
+    entries.every((item) => isRecord(item) && exactKeys(item, ["id", "fingerprint"]) && typeof item.id === "string" && item.id.length > 0 && /^[a-f0-9]{64}$/.test(item.fingerprint as string));
+  if (value.version === 4) {
+    const composition = value.compositionMetrics;
+    const compositionKeys = ["earlierEpisodeCount", "earlierMessageCount", "earlierSourceBytes", "laterEpisodeCount", "laterMessageCount", "laterSourceBytes", "cumulativeMessageCount", "cumulativeSourceBytes", "priorCapsuleTextBytes", "newCapsuleTextBytes"];
+    const nonnegative = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number >= 0;
+    return exactKeys(value, ["version", "kind", "sourceEntryIds", "sourceFingerprints", "activeUserEntryId", "capsule", "replacementMetrics", "generation", "parentReceiptEntryId", "parentReceiptFingerprint", "priorCapsuleFingerprint", "newlyIncorporatedBeforeParentEntries", "newlyCompletedAfterParentEntries", "provider", "model", "reasoningEffort", "promptVersion", "usage", "compositionMetrics"]) &&
+      providerFields && value.promptVersion === "capsule-v4" && hasReplacementMetrics(value.replacementMetrics) &&
+      typeof value.generation === "number" && Number.isInteger(value.generation) && value.generation >= 2 &&
+      typeof value.parentReceiptEntryId === "string" && value.parentReceiptEntryId.length > 0 &&
+      typeof value.parentReceiptFingerprint === "string" && /^[a-f0-9]{64}$/.test(value.parentReceiptFingerprint) &&
+      typeof value.priorCapsuleFingerprint === "string" && /^[a-f0-9]{64}$/.test(value.priorCapsuleFingerprint) &&
+      exactEntries(value.newlyIncorporatedBeforeParentEntries, false) && exactEntries(value.newlyCompletedAfterParentEntries, true) &&
+      isRecord(composition) && exactKeys(composition, compositionKeys) && compositionKeys.every((key) => nonnegative(composition[key]));
+  }
+  const delta = value.deltaMetrics;
   const positive = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number > 0;
   const byteCount = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number >= 0;
   return providerFields && value.promptVersion === "capsule-v3" && hasReplacementMetrics(value.replacementMetrics) &&
@@ -534,9 +638,18 @@ function capsuleRequest(
   active: AgentMessage,
   continuationGoal: string,
   priorCapsule?: ContinuationCapsule,
+  before: SessionLikeEntry[] = [],
+  after: SessionLikeEntry[] = selected,
+  v4 = false,
 ): string {
   const payload = redact(
-    JSON.stringify(priorCapsule ? {
+    JSON.stringify(priorCapsule ? v4 ? {
+      priorContinuationCapsule: priorCapsule,
+      newlyIncorporatedBeforeParentEntries: before,
+      newlyCompletedAfterParentEntries: after,
+      activeRequest: active,
+      continuationGoal,
+    } : {
       priorContinuationCapsule: priorCapsule,
       newlyCompletedEpisodeEntries: selected,
       activeRequest: active,
@@ -565,17 +678,51 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
   if (process.env[EPISODE_RETIREMENT_ENABLED_VAR] !== "true") return;
 
   pi.registerTool({
+    name: "inspect_episode_retirement",
+    label: "inspect episode retirement",
+    description: "Read-only mechanical inspection of safe completed-episode retirement candidates. Run this first when a prior continuation capsule exists; retain judgment about whether and what to retire.",
+    parameters: Type.Object({}),
+    executionMode: "sequential",
+    async execute(_id, _params, _signal, _onUpdate, ctx) {
+      const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
+      let contextEntries: SessionLikeEntry[];
+      try { contextEntries = resolvedSlots(ctx.sessionManager); } catch { throw new Error("Episode inspection refused: resolved context is unavailable."); }
+      const assessment = assessLatestReceipt(branch, contextEntries);
+      if (assessment.state === "compacted") throw new Error("Episode inspection refused: native compaction after retirement is unsupported.");
+      if (assessment.state === "malformed") throw new Error("Episode inspection refused: latest receipt chain is malformed or inactive.");
+      const parentEntry = assessment.state === "valid" ? assessment.entry : undefined;
+      const maxCount = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").length - 1;
+      const candidates: Array<Record<string, unknown>> = [];
+      const refused: Array<{ count: number; reason: string }> = [];
+      for (let count = 1; count <= maxCount; count++) {
+        const preflight = preflightRetirement(contextEntries, parentEntry, count);
+        if ("reason" in preflight) { refused.push({ count, reason: preflight.reason }); continue; }
+        const cumulativeIds = parentEntry && preflight.emitsV4
+          ? [...preflight.before, ...preflight.parentSource, ...preflight.after].map((entry) => entry.id)
+          : parentEntry ? [...parentEntry.data.sourceEntryIds, ...preflight.selection.sourceEntryIds]
+          : preflight.selection.sourceEntryIds;
+        const earlier = rawMetrics(contextEntries, preflight.before.map((entry) => entry.id));
+        const later = rawMetrics(contextEntries, preflight.after.map((entry) => entry.id));
+        const cumulative = rawMetrics(contextEntries, cumulativeIds);
+        candidates.push({ count, relation: preflight.relation, earlierAddedEpisodeCount: earlier.completedEpisodeCount, earlierAddedMessageCount: earlier.sourceMessageCount, laterAddedEpisodeCount: later.completedEpisodeCount, laterAddedMessageCount: later.sourceMessageCount, cumulativeEpisodeCount: cumulative.completedEpisodeCount, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, startId: cumulativeIds[0], endId: cumulativeIds.at(-1) });
+      }
+      const details = { candidates, refused };
+      return { content: [{ type: "text", text: JSON.stringify(details) }], details };
+    },
+  });
+
+  pi.registerTool({
     name: "retire_episodes",
     label: "retire episodes",
     description:
-      "Choose the largest contiguous suffix of fully settled completed episodes: retained completed episodes continue consuming context, cache, and local inference time. Never include active work. Supply a concise continuation goal; the configured secondary model authors the capsule.",
+      "Choose the largest contiguous suffix of fully settled completed episodes: retained completed episodes continue consuming context, cache, and local inference time. If a prior continuation capsule exists, run inspect_episode_retirement first: latestCompletedEpisodes counts original raw completed episodes including those already represented by the capsule; a broader safe suffix is allowed. Never include active work. Supply a concise continuation goal; the configured secondary model authors the capsule.",
     parameters: retireSchema,
     executionMode: "sequential",
     renderResult(result, { expanded, isPartial }, theme, context) {
       if (isPartial) {
         return new Text(theme.fg("warning", "Authoring retirement capsule…"), 0, 0);
       }
-      const receipt = result.details as (EpisodeRetirementReceiptV2 | EpisodeRetirementReceiptV3) | undefined;
+      const receipt = result.details as (EpisodeRetirementReceiptV2 | EpisodeRetirementReceiptV3 | EpisodeRetirementReceiptV4) | undefined;
       const metrics = receipt?.replacementMetrics;
       if (!receipt || !metrics) {
         const text = result.content.flatMap((part) =>
@@ -598,7 +745,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           ? [`$${usage.cost.total}`]
           : [],
       ).join(" · ");
-      const generation = receipt.version === 3 ? `generation ${receipt.generation}; this retirement: ${receipt.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${receipt.deltaMetrics.newlyCompletedMessageCount} message(s), ${receipt.deltaMetrics.newlyCompletedSourceBytes} B source → ${receipt.deltaMetrics.newCapsuleTextBytes} B capsule-text` : "generation 1";
+      const generation = receipt.version === 3 ? `generation ${receipt.generation}; this retirement: ${receipt.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${receipt.deltaMetrics.newlyCompletedMessageCount} message(s), ${receipt.deltaMetrics.newlyCompletedSourceBytes} B source → ${receipt.deltaMetrics.newCapsuleTextBytes} B capsule-text` : receipt.version === 4 ? `generation ${receipt.generation}; earlier additions: ${receipt.compositionMetrics.earlierEpisodeCount} episode(s), ${receipt.compositionMetrics.earlierMessageCount} message(s), ${receipt.compositionMetrics.earlierSourceBytes} B; later additions: ${receipt.compositionMetrics.laterEpisodeCount} episode(s), ${receipt.compositionMetrics.laterMessageCount} message(s), ${receipt.compositionMetrics.laterSourceBytes} B; cumulative ${receipt.compositionMetrics.cumulativeMessageCount} message(s), ${receipt.compositionMetrics.cumulativeSourceBytes} B source → ${receipt.compositionMetrics.newCapsuleTextBytes} B capsule-text` : "generation 1";
       const compact = `${generation}; cumulative ${metrics.completedEpisodeCount} completed episode(s), ${metrics.sourceMessageCount} source message(s), ${metrics.sourceMessageBytes} B serialized source → ${metrics.capsuleTextBytes} B capsule-text; ${receipt.provider}/${receipt.model} (${receipt.reasoningEffort})${usageText ? `; LLM: ${usageText}` : ""}`;
       if (!expanded) {
         return new Text(theme.fg("success", `${compact} (${keyHint("app.tools.expand", "to expand")})`), 0, 0);
@@ -621,19 +768,9 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       if (assessment.state === "compacted") throw new Error("Episode retirement refused: native compaction after retirement is unsupported.");
       if (assessment.state === "malformed") throw new Error("Episode retirement refused: latest receipt chain is malformed or inactive.");
       const parentEntry = assessment.state === "valid" ? assessment.entry : undefined;
-      const selection = selectLatestCompletedEpisodes(
-        contextEntries,
-        params.latestCompletedEpisodes,
-      );
-      if (selection.reason) {
-        throw new Error("Episode retirement refused: " + selection.reason + ".");
-      }
-      if (parentEntry) {
-        const required = requiredRepeatedEpisodeCount(contextEntries, parentEntry.data.activeUserEntryId, selection.activeUserEntryId);
-        if (required === undefined || params.latestCompletedEpisodes !== required || selection.sourceEntryIds[0] !== parentEntry.data.activeUserEntryId) {
-          throw new Error(`Episode retirement refused: repeated retirement requires exactly ${required ?? 0} latest completed episode(s) adjacent to the parent active user.`);
-        }
-      }
+      const preflight = preflightRetirement(contextEntries, parentEntry, params.latestCompletedEpisodes);
+      if ("reason" in preflight) throw new Error("Episode retirement refused: " + preflight.reason + ".");
+      const { selection, before, after, parentSource, emitsV4 } = preflight;
       if (signal?.aborted) {
         throw new Error("Episode retirement capsule request aborted.");
       }
@@ -676,7 +813,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           role: "user",
           content: [{
             type: "text",
-            text: capsuleRequest(selected, active, params.continuationGoal, parentEntry?.data.capsule),
+            text: capsuleRequest(selected, active, params.continuationGoal, parentEntry?.data.capsule, before, after, emitsV4),
           }],
           timestamp: Date.now(),
         }],
@@ -700,27 +837,31 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
         throw new Error("Capsule model returned an empty response.");
       }
       const capsule = parseCapsule(text);
-      const cumulativeIds = parentEntry ? [...parentEntry.data.sourceEntryIds, ...selection.sourceEntryIds] : selection.sourceEntryIds;
-      const cumulativeFingerprints = parentEntry ? [...parentEntry.data.sourceFingerprints, ...selection.sourceFingerprints] : selection.sourceFingerprints;
+      const cumulativeIds = parentEntry && emitsV4 ? [...before, ...parentSource, ...after].map((entry) => entry.id) : parentEntry ? [...parentEntry.data.sourceEntryIds, ...selection.sourceEntryIds] : selection.sourceEntryIds;
+      const cumulativeFingerprints = cumulativeIds.map((id) => fingerprintEntry(contextEntries.find((entry) => entry.id === id)!));
       const cumulative = contextEntries.filter((entry) => cumulativeIds.includes(entry.id));
       const cumulativeRaw = rawMetrics(contextEntries, cumulativeIds);
       const replacementMetrics = {
         ...cumulativeRaw,
         capsuleTextBytes: Buffer.byteLength(capsuleText(capsule, cumulativeIds)),
       };
-      const receipt: EpisodeRetirementReceipt = parentEntry ? {
+      const receipt: EpisodeRetirementReceipt = parentEntry && emitsV4 ? {
+        version: 4, kind: RECEIPT_TYPE, sourceEntryIds: cumulativeIds, sourceFingerprints: cumulativeFingerprints,
+        activeUserEntryId: selection.activeUserEntryId, capsule, provider: configured.provider, model: configured.model,
+        reasoningEffort, promptVersion: "capsule-v4", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
+        generation: parentEntry.data.version === 3 || parentEntry.data.version === 4 ? parentEntry.data.generation + 1 : 2,
+        parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data), priorCapsuleFingerprint: hashJson(parentEntry.data.capsule),
+        newlyIncorporatedBeforeParentEntries: before.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
+        newlyCompletedAfterParentEntries: after.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
+        compositionMetrics: { earlierEpisodeCount: rawMetrics(contextEntries, before.map((entry) => entry.id)).completedEpisodeCount, earlierMessageCount: before.length, earlierSourceBytes: Buffer.byteLength(JSON.stringify(before.map((entry) => entry.message))), laterEpisodeCount: rawMetrics(contextEntries, after.map((entry) => entry.id)).completedEpisodeCount, laterMessageCount: after.length, laterSourceBytes: Buffer.byteLength(JSON.stringify(after.map((entry) => entry.message))), cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)), newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
+      } : parentEntry ? {
         version: 3, kind: RECEIPT_TYPE, sourceEntryIds: cumulativeIds, sourceFingerprints: cumulativeFingerprints,
         activeUserEntryId: selection.activeUserEntryId, capsule, provider: configured.provider, model: configured.model,
         reasoningEffort, promptVersion: "capsule-v3", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
         generation: parentEntry.data.version === 3 ? parentEntry.data.generation + 1 : 2,
         parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data),
-        priorCapsuleFingerprint: hashJson(parentEntry.data.capsule),
-        newlyCompletedEpisodeEntries: selected.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
-        deltaMetrics: { newlyCompletedEpisodeCount: params.latestCompletedEpisodes, newlyCompletedMessageCount: selected.length,
-          newlyCompletedSourceBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))),
-          cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes,
-          priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)),
-          newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
+        priorCapsuleFingerprint: hashJson(parentEntry.data.capsule), newlyCompletedEpisodeEntries: selected.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
+        deltaMetrics: { newlyCompletedEpisodeCount: params.latestCompletedEpisodes, newlyCompletedMessageCount: selected.length, newlyCompletedSourceBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))), cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)), newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
       } : {
         version: 2, kind: RECEIPT_TYPE, ...selection, capsule, provider: configured.provider, model: configured.model,
         reasoningEffort, promptVersion: "capsule-v2", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,

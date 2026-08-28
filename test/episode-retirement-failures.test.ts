@@ -70,6 +70,7 @@ function harness(
   };
   return {
     retire: tools.find((x) => x.name === "retire_episodes"),
+    inspect: tools.find((x) => x.name === "inspect_episode_retirement"),
     recall: tools.find((x) => x.name === "recall_episode"),
     handlers,
     appended,
@@ -117,15 +118,34 @@ describe("episode retirement failures", () => {
     expect(selectLatestCompletedEpisodes(createEntries() as SessionLikeEntry[], 1).reason).toBe(reason);
   });
 
-  it("a V1 parent rejects a non-adjacent repeated range before stream or append", async () => {
+  it("inspect refuses a malformed receipt chain before any model side effect", async () => {
     const h = harness();
-    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
-    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("requires exactly 0 latest completed episode");
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { malformed: true } });
+    await expect(h.inspect.execute("inspect", {}, undefined, undefined, h.ctx)).rejects.toThrow("Episode inspection refused: latest receipt chain is malformed or inactive.");
     expect(h.calls()).toBe(0);
     expect(h.appended).toHaveLength(0);
   });
 
-  it("rejects a repeated range larger than its required N before model lookup or auth", async () => {
+  it("inspect reports a partial parent overlap as refused", async () => {
+    const h = harness();
+    h.branch.unshift(msg("u0", "user", "earlier"), msg("a0", "assistant", "earlier done"));
+    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u0", "a0", "u1", "a1"], sourceFingerprints: h.branch.slice(0, 4).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: parent }, msg("a2", "assistant", "done"), msg("u3", "user", "active again"));
+    h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
+    const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(result.details.refused).toContainEqual({ count: 2, reason: "selection partially overlaps or gaps the parent range" });
+    expect(h.calls()).toBe(0);
+  });
+
+  it("a V1 parent refuses V4 when it has no completed after-parent interval", async () => {
+    const h = harness();
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
+    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("V4 requires a completed after-parent interval");
+    expect(h.calls()).toBe(0);
+    expect(h.appended).toHaveLength(0);
+  });
+
+  it("a V1 parent recomposes a selected cumulative range", async () => {
     const h = harness();
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
     h.branch.push(msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
@@ -133,18 +153,18 @@ describe("episode retirement failures", () => {
     let finds = 0, auths = 0;
     h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; };
     h.ctx.modelRegistry.getApiKeyAndHeaders = async () => { auths++; return { ok: true }; };
-    await expect(h.retire.execute("x", { latestCompletedEpisodes: 2, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("requires exactly 1 latest completed episode");
-    expect(finds).toBe(0); expect(auths).toBe(0); expect(h.calls()).toBe(0); expect(h.appended).toHaveLength(0);
+    await h.retire.execute("x", { latestCompletedEpisodes: 2, continuationGoal: "go" }, undefined, undefined, h.ctx);
+    expect(finds).toBe(1); expect(auths).toBe(1); expect(h.calls()).toBe(1); expect((h.appended[0] as any).version).toBe(4);
   });
 
-  it("uses raw cumulative slots for a V1 parent's generation-2 metrics", async () => {
+  it("uses raw cumulative slots for a V1 parent's V4 generation-2 metrics", async () => {
     const h = harness();
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
     h.branch.push(msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     await h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx);
     const receipt: any = h.appended[0];
-    expect(receipt).toMatchObject({ version: 3, generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"] });
+    expect(receipt).toMatchObject({ version: 4, generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"] });
     expect(receipt.replacementMetrics.completedEpisodeCount).toBe(2);
   });
 

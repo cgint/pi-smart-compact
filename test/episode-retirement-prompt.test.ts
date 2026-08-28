@@ -52,6 +52,8 @@ describe("/retire prompt template", () => {
       "safe or worthwhile",
       "what should remain salient or happen next",
       "not instructions about what to retire",
+      "inspect_episode_retirement",
+      "including those already represented by the capsule",
     ]) {
       expect(text.toLowerCase()).toContain(phrase);
     }

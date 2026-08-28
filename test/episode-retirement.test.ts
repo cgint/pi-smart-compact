@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { mockStreamSimple } = vi.hoisted(() => ({ mockStreamSimple: vi.fn() }));
@@ -49,7 +50,7 @@ const publicSession = (branch: SessionLikeEntry[]) => {
   };
 };
 const extensionHarness = (manager: SessionManager) => {
-  const tools: any[] = [], handlers: Record<string, any> = {}, appended: unknown[] = [];
+  const tools: any[] = [], handlers: Record<string, any> = {}, appended: unknown[] = []; let finds = 0, auths = 0;
   const pi: any = {
     registerTool: (tool: any) => tools.push(tool),
     on: (name: string, handler: any) => { handlers[name] = handler; },
@@ -62,9 +63,9 @@ const extensionHarness = (manager: SessionManager) => {
   mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
   registerEpisodeRetirement(pi);
   return {
-    retire: tools.find((tool) => tool.name === "retire_episodes"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
-    streams: () => mockStreamSimple.mock.calls.length,
-    ctx: { sessionManager: manager, modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) } },
+    retire: tools.find((tool) => tool.name === "retire_episodes"), inspect: tools.find((tool) => tool.name === "inspect_episode_retirement"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
+    streams: () => mockStreamSimple.mock.calls.length, finds: () => finds, auths: () => auths,
+    ctx: { sessionManager: manager, modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
   };
 };
 
@@ -89,7 +90,53 @@ async function latestV3Fixture() {
   return { manager, h, receiptEntry };
 }
 
+async function latestV4Fixture() {
+  const branch = [user("uA", "earlier"), assistant("aA", "earlier done"), user("uB", "parent"), assistant("aB", "parent done"), user("u1", "first active")] as SessionLikeEntry[];
+  const tools: any[] = [], appended: any[] = [], handlers: Record<string, any> = {};
+  let finds = 0, auths = 0;
+  const pi: any = {
+    registerTool: (tool: any) => tools.push(tool),
+    on: (name: string, handler: any) => { handlers[name] = handler; },
+    appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "r", data }); publicSession(branch); },
+  };
+  process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
+  mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
+  registerEpisodeRetirement(pi);
+  const h: any = {
+    retire: tools.find((tool) => tool.name === "retire_episodes"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
+    streams: () => mockStreamSimple.mock.calls.length, finds: () => finds, auths: () => auths,
+    ctx: { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
+  };
+  await h.retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, h.ctx);
+  branch.push(assistant("a1", "first done"), user("u2", "second active")); h.ctx.sessionManager = publicSession(branch);
+  await h.retire.execute("v4", { latestCompletedEpisodes: 3, continuationGoal: "continue" }, undefined, undefined, h.ctx);
+  return { branch, h, receiptEntry: branch.findLast((entry: any) => entry.customType === "episode-retirement") as any };
+}
+
 describe("episode retirement", () => {
+  it("inspects forward, recompose, and deepen candidates without source egress or side effects", async () => {
+    const manager = SessionManager.inMemory();
+    for (const entry of [user("ignored", "A request"), assistant("ignored", "A done"), user("ignored", "B request"), assistant("ignored", "B done"), user("ignored", "C active")]) manager.appendMessage(entry.message as any);
+    const h = extensionHarness(manager);
+    await h.retire.execute("parent", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, h.ctx);
+    manager.appendMessage(assistant("ignored", "C done").message as any);
+    manager.appendMessage(user("ignored", "D active").message as any);
+    const before = { appended: h.appended.length, streams: h.streams(), finds: h.finds(), auths: h.auths() };
+    const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    const candidates = result.details.candidates;
+    const raw = manager.getEntries().filter((entry: any) => entry.type === "message");
+    const bytes = (candidate: any) => Buffer.byteLength(JSON.stringify(raw.slice(raw.findIndex((entry: any) => entry.id === candidate.startId), raw.findIndex((entry: any) => entry.id === candidate.endId) + 1).map((entry: any) => entry.message)));
+    expect(candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ count: 1, relation: "forward", earlierAddedEpisodeCount: 0, earlierAddedMessageCount: 0, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 2, cumulativeMessageCount: 4 }),
+      expect.objectContaining({ count: 2, relation: "recompose", earlierAddedEpisodeCount: 0, earlierAddedMessageCount: 0, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 2, cumulativeMessageCount: 4 }),
+      expect.objectContaining({ count: 3, relation: "deepen", earlierAddedEpisodeCount: 1, earlierAddedMessageCount: 2, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 3, cumulativeMessageCount: 6 }),
+    ]));
+    for (const candidate of candidates) expect(candidate.cumulativeSourceBytes).toBe(bytes(candidate));
+    expect({ appended: h.appended.length, streams: h.streams(), finds: h.finds(), auths: h.auths() }).toEqual(before);
+    expect(JSON.stringify(result)).not.toContain("A request");
+    expect(JSON.stringify(result)).not.toContain("B request");
+  });
+
   it.each([
     ["model unavailable", (f: any) => { f.h.ctx.modelRegistry.find = () => undefined; }, false],
     ["auth failure", (f: any) => { f.h.ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: false }); }, true],
@@ -301,6 +348,79 @@ describe("episode retirement", () => {
     expect(fixture.h.streams()).toBe(before);
     expect(fixture.h.appended).toHaveLength(2);
     await expect(fixture.h.recall.execute("recall", {}, undefined, undefined, fixture.h.ctx)).rejects.toThrow();
+  });
+
+  it.each([
+    ["parent id", (f: any) => { f.receiptEntry.data.parentReceiptEntryId = "missing"; }],
+    ["parent hash", (f: any) => { f.receiptEntry.data.parentReceiptFingerprint = "0".repeat(64); }],
+    ["prior capsule hash", (f: any) => { f.receiptEntry.data.priorCapsuleFingerprint = "0".repeat(64); }],
+    ["generation", (f: any) => { f.receiptEntry.data.generation++; }],
+    ["cumulative id", (f: any) => { f.receiptEntry.data.sourceEntryIds[0] = "missing"; }],
+    ["cumulative fingerprint", (f: any) => { f.receiptEntry.data.sourceFingerprints[0] = "0".repeat(64); }],
+    ["before id", (f: any) => { f.receiptEntry.data.newlyIncorporatedBeforeParentEntries[0].id = "missing"; }],
+    ["before fingerprint", (f: any) => { f.receiptEntry.data.newlyIncorporatedBeforeParentEntries[0].fingerprint = "0".repeat(64); }],
+    ["before extra", (f: any) => { f.receiptEntry.data.newlyIncorporatedBeforeParentEntries[0].extra = true; }],
+    ["before duplicate", (f: any) => { f.receiptEntry.data.newlyIncorporatedBeforeParentEntries.push(structuredClone(f.receiptEntry.data.newlyIncorporatedBeforeParentEntries[0])); }],
+    ["after id", (f: any) => { f.receiptEntry.data.newlyCompletedAfterParentEntries[0].id = "missing"; }],
+    ["after fingerprint", (f: any) => { f.receiptEntry.data.newlyCompletedAfterParentEntries[0].fingerprint = "0".repeat(64); }],
+    ["after extra", (f: any) => { f.receiptEntry.data.newlyCompletedAfterParentEntries[0].extra = true; }],
+    ["after duplicate", (f: any) => { f.receiptEntry.data.newlyCompletedAfterParentEntries.push(structuredClone(f.receiptEntry.data.newlyCompletedAfterParentEntries[0])); }],
+    ["empty after", (f: any) => { f.receiptEntry.data.newlyCompletedAfterParentEntries = []; }],
+    ...["completedEpisodeCount", "sourceMessageCount", "sourceMessageBytes", "capsuleTextBytes"].map((key) => [`replacement ${key}`, (f: any) => { f.receiptEntry.data.replacementMetrics[key]++; }]),
+    ...["earlierEpisodeCount", "earlierMessageCount", "earlierSourceBytes", "laterEpisodeCount", "laterMessageCount", "laterSourceBytes", "cumulativeMessageCount", "cumulativeSourceBytes", "priorCapsuleTextBytes", "newCapsuleTextBytes"].map((key) => [`composition ${key}`, (f: any) => { f.receiptEntry.data.compositionMetrics[key]++; }]),
+    ["composition extra", (f: any) => { f.receiptEntry.data.compositionMetrics.extra = true; }],
+    ["top-level extra", (f: any) => { f.receiptEntry.data.extra = true; }],
+  ])("fails closed for V4 tamper: %s", async (_name: any, mutate: any) => {
+    const fixture = await latestV4Fixture();
+    mutate(fixture);
+    const event = { messages: fixture.branch.filter((entry) => entry.type === "message").map((entry) => entry.message) };
+    expect(await fixture.h.handlers.context(event, fixture.h.ctx)).toBeUndefined();
+    const before = { streams: fixture.h.streams(), finds: fixture.h.finds(), auths: fixture.h.auths() };
+    await expect(fixture.h.retire.execute("again", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, fixture.h.ctx)).rejects.toThrow("malformed");
+    expect({ streams: fixture.h.streams(), finds: fixture.h.finds(), auths: fixture.h.auths() }).toEqual(before);
+    expect(fixture.h.appended).toHaveLength(2);
+    await expect(fixture.h.recall.execute("recall", {}, undefined, undefined, fixture.h.ctx)).rejects.toThrow();
+  });
+
+  it.each(["after", "before"])("fails closed for a recomputed open-tool %s interval", async (interval) => {
+    const fixture = await latestV4Fixture();
+    const receipt = fixture.receiptEntry.data;
+    const id = interval === "after" ? "a1" : "aA";
+    const raw = fixture.branch.find((entry: any) => entry.id === id)!;
+    raw.message!.content = [{ type: "toolCall", id: "open", name: "bash", arguments: {} }];
+    receipt.sourceFingerprints = receipt.sourceEntryIds.map((sourceId: string) => fingerprintEntry(fixture.branch.find((entry: any) => entry.id === sourceId)!));
+    const before = fixture.branch.filter((entry: any) => ["uA", "aA"].includes(entry.id));
+    const after = fixture.branch.filter((entry: any) => ["u1", "a1"].includes(entry.id));
+    const source = receipt.sourceEntryIds.map((sourceId: string) => fixture.branch.find((entry: any) => entry.id === sourceId)!);
+    receipt.newlyIncorporatedBeforeParentEntries = before.map((entry: any) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) }));
+    receipt.newlyCompletedAfterParentEntries = after.map((entry: any) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) }));
+    receipt.replacementMetrics.sourceMessageBytes = Buffer.byteLength(JSON.stringify(source.map((entry: any) => entry.message)));
+    receipt.compositionMetrics.earlierSourceBytes = Buffer.byteLength(JSON.stringify(before.map((entry: any) => entry.message)));
+    receipt.compositionMetrics.laterSourceBytes = Buffer.byteLength(JSON.stringify(after.map((entry: any) => entry.message)));
+    receipt.compositionMetrics.cumulativeSourceBytes = receipt.replacementMetrics.sourceMessageBytes;
+    const event = { messages: fixture.branch.filter((entry) => entry.type === "message").map((entry) => entry.message) };
+    expect(await fixture.h.handlers.context(event, fixture.h.ctx)).toBeUndefined();
+    const beforeCalls = { streams: fixture.h.streams(), finds: fixture.h.finds(), auths: fixture.h.auths() };
+    await expect(fixture.h.retire.execute("again", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, fixture.h.ctx)).rejects.toThrow("malformed");
+    expect({ streams: fixture.h.streams(), finds: fixture.h.finds(), auths: fixture.h.auths() }).toEqual(beforeCalls);
+  });
+
+  it("emits a V4 exact-forward child and renders its exact capsule/provenance", async () => {
+    const fixture = await latestV4Fixture();
+    fixture.branch.push(assistant("a2", "second done"), user("u3", "third active")); fixture.h.ctx.sessionManager = publicSession(fixture.branch);
+    await fixture.h.retire.execute("v4-child", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, fixture.h.ctx);
+    const child = fixture.h.appended.at(-1);
+    expect(child).toMatchObject({ version: 4, generation: 3, newlyIncorporatedBeforeParentEntries: [], newlyCompletedAfterParentEntries: [{ id: "u2" }, { id: "a2" }] });
+    expect(child.parentReceiptFingerprint).toBe(createHash("sha256").update(JSON.stringify(fixture.h.appended[1])).digest("hex"));
+    const inventory = await fixture.h.recall.execute("inventory", {}, undefined, undefined, fixture.h.ctx);
+    expect(inventory.details.sourceEntryIds).toEqual(child.sourceEntryIds);
+    const theme = { fg: (_color: string, text: string) => text };
+    const compact = fixture.h.retire.renderResult({ content: [], details: child }, { expanded: false, isPartial: false }, theme, { isError: false }) as any;
+    const expanded = fixture.h.retire.renderResult({ content: [], details: child }, { expanded: true, isPartial: false }, theme, { isError: false }) as any;
+    expect(compact.text).toContain(`earlier additions: 0 episode(s), 0 message(s), ${child.compositionMetrics.earlierSourceBytes} B; later additions:`);
+    expect(compact.text).toContain(`cumulative ${child.compositionMetrics.cumulativeMessageCount} message(s)`);
+    expect((expanded.text.match(/CONTINUATION CAPSULE/g) ?? [])).toHaveLength(1);
+    expect(expanded.text).toContain(`Provenance: ${child.sourceEntryIds.join(", ")}`);
   });
 
   it("fails closed when the V3 parent entry is physically absent from the real manager tree", async () => {
@@ -595,4 +715,108 @@ describe("episode retirement", () => {
     expect((projected.messages[earlier.length].content as Array<{ text: string }>)[0].text).toContain("CONTINUATION CAPSULE");
     expect((projected.messages[earlier.length].content as Array<{ text: string }>)[1].text).toBe("active request");
   });
+
+  it("recomposes opaque P + raw A + V2 B + completed cycle into a V4 receipt", async () => {
+    const branch = [user("uP", "opaque prefix"), assistant("aP", "prefix done"), user("uA", "A"), assistant("aA", "A done"), user("uB", "B"), assistant("aB", "B done"), user("u1", "first active")] as SessionLikeEntry[];
+    const tools: any[] = [], appended: any[] = [], handlers: Record<string, any> = {};
+    let finds = 0, auths = 0;
+    const pi: any = {
+      registerTool: (tool: any) => tools.push(tool), on: (name: string, handler: any) => { handlers[name] = handler; },
+      appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); },
+    };
+    process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
+    mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
+    registerEpisodeRetirement(pi);
+    const retire = tools.find((tool) => tool.name === "retire_episodes"), recall = tools.find((tool) => tool.name === "recall_episode");
+    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    await retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    branch.push(assistant("a1", "retirement assessment complete"), user("u2", "recompose all")); ctx.sessionManager = publicSession(branch);
+    await retire.execute("v4", { latestCompletedEpisodes: 3, continuationGoal: "recompose" }, undefined, undefined, ctx);
+    const receipt = appended.at(-1);
+    expect(receipt).toMatchObject({ version: 4, sourceEntryIds: ["uA", "aA", "uB", "aB", "u1", "a1"], parentReceiptEntryId: "r1" });
+    expect(new Set(receipt.sourceEntryIds).size).toBe(6);
+    expect(receipt.sourceFingerprints).toEqual(branch.filter((entry) => receipt.sourceEntryIds.includes(entry.id)).map(fingerprintEntry));
+    expect(receipt.parentReceiptFingerprint).toBe(createHash("sha256").update(JSON.stringify(appended[0])).digest("hex"));
+    expect(receipt.priorCapsuleFingerprint).toBe(createHash("sha256").update(JSON.stringify(appended[0].capsule)).digest("hex"));
+    const request = mockStreamSimple.mock.calls[1][1].messages[0].content[0].text;
+    const payload = JSON.parse(request.slice(request.indexOf("{")));
+    expect(payload.priorContinuationCapsule).toEqual(appended[0].capsule);
+    expect(payload.newlyIncorporatedBeforeParentEntries.map((entry: any) => entry.id)).toEqual(["uA", "aA"]);
+    expect(payload.newlyCompletedAfterParentEntries.map((entry: any) => entry.id)).toEqual(["u1", "a1"]);
+    expect(JSON.stringify([payload.newlyIncorporatedBeforeParentEntries, payload.newlyCompletedAfterParentEntries])).not.toContain("uB");
+    expect(request).not.toContain("[CONTINUATION CAPSULE — episode retirement]");
+    const event = { messages: branch.filter((entry) => entry.type === "message").map((entry) => entry.message) };
+    const projected = await handlers.context(event, ctx);
+    expect(projected.messages.slice(0, 2)).toEqual(event.messages.slice(0, 2));
+    expect((JSON.stringify(projected.messages).match(/CONTINUATION CAPSULE/g) ?? [])).toHaveLength(1);
+    expect(JSON.parse((await recall.execute("inventory", {}, undefined, undefined, ctx)).content[0].text).map((entry: any) => entry.id)).toEqual(["uA", "aA", "uB", "aB", "u1", "a1"]);
+    expect(JSON.parse((await recall.execute("raw", { sourceEntryId: "a1" }, undefined, undefined, ctx)).content[0].text).id).toBe("a1");
+    expect({ finds, auths, streams: mockStreamSimple.mock.calls.length, appends: appended.length }).toEqual({ finds: 2, auths: 2, streams: 2, appends: 2 });
+  });
+
+  it("recomposition stream failure preserves the effective V2 receipt", async () => {
+    const branch = [user("uA", "A"), assistant("aA", "A done"), user("uB", "B"), assistant("aB", "B done"), user("u1", "first active")] as SessionLikeEntry[];
+    const tools: any[] = [], appended: any[] = [], handlers: Record<string, any> = {}; let finds = 0, auths = 0;
+    const pi: any = { registerTool: (tool: any) => tools.push(tool), on: (name: string, handler: any) => { handlers[name] = handler; }, appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); } };
+    process.env.PI_EPISODE_RETIREMENT_ENABLED = "true"; registerEpisodeRetirement(pi);
+    const retire = tools.find((tool) => tool.name === "retire_episodes"), recall = tools.find((tool) => tool.name === "recall_episode");
+    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
+    await retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    const priorEvent = { messages: branch.filter((entry) => entry.type === "message").map((entry) => entry.message) };
+    const priorProjection = await handlers.context(priorEvent, ctx);
+    const priorInventory = await recall.execute("inventory", {}, undefined, undefined, ctx);
+    mockStreamSimple.mockReturnValue({ result: async () => { throw new Error("capsule generation failed"); } });
+    branch.push(assistant("a1", "retirement assessment complete"), user("u2", "recompose all")); ctx.sessionManager = publicSession(branch);
+    await expect(retire.execute("v4", { latestCompletedEpisodes: 3, continuationGoal: "recompose" }, undefined, undefined, ctx)).rejects.toThrow("capsule generation failed");
+    expect({ finds, auths, streams: mockStreamSimple.mock.calls.length, appends: appended.length }).toEqual({ finds: 2, auths: 2, streams: 2, appends: 1 });
+    const currentEvent = { messages: branch.filter((entry) => entry.type === "message").map((entry) => entry.message) };
+    expect((await handlers.context(currentEvent, ctx)).messages).toHaveLength(5);
+    expect(await recall.execute("inventory", {}, undefined, undefined, ctx)).toEqual(priorInventory);
+    expect(JSON.parse(priorInventory.content[0].text).map((entry: any) => entry.id)).toEqual(["uB", "aB"]);
+  });
+
+  it("refuses partial parent overlap before capsule egress", async () => {
+    const branch = [user("uA", "A"), assistant("aA", "A done"), user("uB", "B"), assistant("aB", "B done"), user("uC", "C active")] as SessionLikeEntry[];
+    const tools: any[] = [], appended: any[] = []; let finds = 0, auths = 0;
+    const pi: any = { registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); } };
+    process.env.PI_EPISODE_RETIREMENT_ENABLED = "true"; registerEpisodeRetirement(pi);
+    mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
+    const retire = tools.find((tool) => tool.name === "retire_episodes"); const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    await retire.execute("v2", { latestCompletedEpisodes: 2, continuationGoal: "continue" }, undefined, undefined, ctx);
+    branch.push(assistant("aC", "C done"), user("uD", "D active")); ctx.sessionManager = publicSession(branch);
+    const streams = mockStreamSimple.mock.calls.length;
+    await expect(retire.execute("partial", { latestCompletedEpisodes: 2, continuationGoal: "no overlap" }, undefined, undefined, ctx)).rejects.toThrow();
+    expect({ finds, auths, streams: mockStreamSimple.mock.calls.length, appends: appended.length }).toEqual({ finds: 1, auths: 1, streams, appends: 1 });
+  });
+
+  it("refuses a gapped after-parent interval before capsule egress", async () => {
+    const fixture = await generation2Fixture(); let finds = 0, auths = 0;
+    fixture.h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; };
+    fixture.h.ctx.modelRegistry.getApiKeyAndHeaders = async () => { auths++; return { ok: true }; };
+    fixture.manager.appendMessage(assistant("ignored", "third done").message as any);
+    fixture.manager.appendMessage(user("ignored", "fourth").message as any);
+    const streams = fixture.h.streams();
+    await expect(fixture.h.retire.execute("gapped", { latestCompletedEpisodes: 1, continuationGoal: "no gap" }, undefined, undefined, fixture.h.ctx)).rejects.toThrow();
+    expect({ finds, auths, streams: fixture.h.streams(), appends: fixture.h.appended.length }).toEqual({ finds: 0, auths: 0, streams, appends: 1 });
+  });
+
+
+  it("inspects initial candidates without model or persistence work", async () => {
+    const manager = SessionManager.inMemory();
+    manager.appendMessage(user("ignored", "settled request").message as any);
+    manager.appendMessage(assistant("ignored", "settled result").message as any);
+    manager.appendMessage(user("ignored", "active request").message as any);
+    const harness = extensionHarness(manager);
+    const result = await harness.inspect.execute("inspect", {}, undefined, undefined, harness.ctx);
+    const candidates = (result.details as { candidates: Array<{ relation: string; count: number; startId: string; endId: string }> }).candidates;
+    expect(candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ relation: "initial", count: 1, startId: expect.any(String), endId: expect.any(String) }),
+    ]));
+    expect(harness.finds()).toBe(0);
+    expect(harness.auths()).toBe(0);
+    expect(harness.streams()).toBe(0);
+    expect(harness.appended).toHaveLength(0);
+  });
+
 });
