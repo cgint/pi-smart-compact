@@ -1,8 +1,8 @@
 # EVALUATION — how turn-reduce gets judged
 
 > **Status: parked research record, as of 2026-08-13.** P01 ran once and found harm;
-> the full benchmark grid was not run. The current workspace has an incomplete, unwired
-> prototype, so the `ON` arm is not runnable until a future implementation is deliberately resumed.
+> the full benchmark grid was not run. The incomplete prototype is retained only in
+> branch `wip/turn-reduction-prototype` as a code backup; `main` does not support the `ON` arm.
 > Method borrowed from `~/dev/concepts/deliberate-agent/docs/cross-domain-comparison.md`.
 
 ## The position in one paragraph

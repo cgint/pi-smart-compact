@@ -1,9 +1,8 @@
 # Tasks — keep-sessions-focused-between-turns
 
-> **Historical work record; status 2026-08-13: parked, not releasable.** The current
-> workspace has pure reducer code and tests but lacks extension wiring; full precommit is red.
-> Checkmarks record work attempted at the time, not a claim that a working feature remains.
-> The switch would stay **off by default** for every task below.
+> **Historical work record; discontinued and archived 2026-08-28.** Incomplete code is
+> retained only in `wip/turn-reduction-prototype` as backup. `main` has no turn-reduction
+> implementation. Checkmarks record work attempted at the time, not a working feature.
 
 ## 1. Ground the work
 
