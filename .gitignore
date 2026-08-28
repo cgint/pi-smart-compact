@@ -9,7 +9,11 @@ node_modules/
 # macOS
 .DS_Store
 
-.pi
+.pi/
+.pi-rlm/
+
+# ctag index
+tags
 
 # Logs
 *.log
