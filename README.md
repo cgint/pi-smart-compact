@@ -32,6 +32,8 @@ Edit `prompts/smart-compaction-prompt.md` to change compaction behavior. No code
 
 Episode retirement remains off by default. Enable it with `PI_EPISODE_RETIREMENT_ENABLED=true`. When the active agent calls `retire_episodes`, it chooses the completed-episode count and supplies `continuationGoal`; one configured secondary model alone authors the persisted capsule.
 
+Use the native `/retire` prompt template, or `/retire Continue with Shuttle workload planning and the target-host pivot.` to add optional continuation emphasis. It expands into a normal user turn; the active agent still decides whether retirement is appropriate, its count, and its goal. Optional text says what should remain salient or happen next, not what to retire.
+
 ```bash
 export PI_EPISODE_RETIREMENT_MODEL=google/gemini-3.7-flash
 export PI_EPISODE_RETIREMENT_REASONING_EFFORT=medium

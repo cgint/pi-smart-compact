@@ -19,7 +19,7 @@ type AgentMessage = {
   [key: string]: unknown;
 };
 
-const ENABLED_VAR = "PI_EPISODE_RETIREMENT_ENABLED";
+export const EPISODE_RETIREMENT_ENABLED_VAR = "PI_EPISODE_RETIREMENT_ENABLED";
 const RECEIPT_TYPE = "episode-retirement";
 const MODEL_VAR = "PI_EPISODE_RETIREMENT_MODEL";
 const EFFORT_VAR = "PI_EPISODE_RETIREMENT_REASONING_EFFORT";
@@ -562,7 +562,7 @@ const retireSchema = Type.Object({
 });
 
 export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
-  if (process.env[ENABLED_VAR] !== "true") return;
+  if (process.env[EPISODE_RETIREMENT_ENABLED_VAR] !== "true") return;
 
   pi.registerTool({
     name: "retire_episodes",

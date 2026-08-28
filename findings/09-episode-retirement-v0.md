@@ -12,7 +12,7 @@ V3 extends a valid V1/V2 first retirement with an append-only active receipt cha
 
 V2 keeps active-agent episode selection but moves capsule authorship to exactly one configured secondary `provider/model` (`PI_EPISODE_RETIREMENT_MODEL`, default `google/gemini-3.7-flash`) at a validated Pi reasoning level (`PI_EPISODE_RETIREMENT_REASONING_EFFORT`, default `medium`). It has no active-model fallback: configuration, model/auth, completion, or capsule-validation failure aborts before append. V2 receipts persist model metadata and nested usage; existing V1 receipts remain projectable and recallable.
 
-Current automated evidence: `npm run precommit` passed TypeScript, 112 tests across 3 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
+Current automated evidence: `npm run precommit` passed TypeScript, 118 tests across 4 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
 
 ## Name and contract
 
@@ -60,6 +60,12 @@ The isolated fork `/tmp/pi-resolved-context-fork.5WzhzX/sessions/2026-08-28T13-2
 ### Resolved-context repeated-retirement V3 smoke
 
 The isolated session `/tmp/pi-v3-smoke.WPu94f/sessions/2026-08-28T15-13-43-413Z_v3-live-smoke.jsonl` produced receipts `[V2, V3]`. V3 generation 2 names parent entry `41e81785`; exact parent-receipt and prior-capsule hashes matched, as did all six raw source fingerprints. Its cumulative replacement metrics were 2 episodes / 6 messages / 6,992 bytes / 243 capsule bytes; delta metrics were 1 episode / 4 messages / 4,540 bytes / 259 prior-capsule bytes / 243 new-capsule bytes. Capsule-model usage was 2,707 input / 469 output / 410 reasoning / 3,176 total / `$0.003789`. A no-tools follow-up recovered `migrate service`, `blue-route`, and `verify-checksum`. This verifies chain mechanics only, not general quality, cache, or cost benefit; post-receipt native compaction remains refused and untested live.
+
+### Native /retire prompt
+
+`/retire [optional continuation emphasis]` is feature-gated and selectively discovered as a native Pi prompt template. It expands into a normal user turn: the active agent retains whether/count/goal decisions, and optional text says only what remains salient or happens next. A pinned Pi 0.84.2 `registerCommand` + captured `pi.sendUserMessage` adapter was rejected after resume: its stale-context guard fired before nudge, tool, or receipt append, so it was removed rather than worked around.
+
+Fresh resumed smoke `/tmp/pi-retire-template-smoke.vT13Zt/sessions/2026-08-28T16-19-26-979Z_native-retire-live.jsonl` persisted no literal `/retire`; it produced one expanded prompt, one agent-chosen N=1 call with non-empty goal, and one valid V2 receipt. All fingerprints matched; metrics were 1 episode / 2 messages / 901 source bytes → 495 capsule bytes. Active usage was 1,400 input / 148 output / 83 reasoning / 1,548 total / `$0.004576`; capsule usage was 706 input / 260 output / 143 reasoning / 966 total / `$0.0015045`. This verifies prompt command mechanics only, not general benefit.
 
 All artifacts are outside the repository:
 
