@@ -1,0 +1,94 @@
+direction: down
+
+goals: |md
+  **Goals, ranked**
+  1. Raise the ceiling — goal-oriented curation
+  2. Keep out of the dumb zone
+  3. Reduce user frustration
+  4. Speed / cost — *guardrail only*
+| {
+  style.fill: "#eef4ff"
+}
+
+gap: |md
+  **Parked finding**
+  Reducer is goal-blind
+  P01 also invalidated cache
+| {
+  style.fill: "#ffecec"
+}
+
+pre: |md
+  **Precondition — cheap**
+  Peak prompt length down?
+  Fewer compactions?
+| {
+  style.fill: "#f3f3f3"
+}
+
+arms: |md
+  **Arms, compute-matched**
+  OFF · ON · LEAK · TRIVIAL
+| {
+  style.fill: "#f3f3f3"
+}
+
+runs: |md
+  **Paired runs**
+  Docker verifier
+  session kept
+| {
+  style.fill: "#f3f3f3"
+}
+
+primary: |md
+  **Primary**
+  Success rate × depth
+  never pooled
+| {
+  style.fill: "#eaf7ea"
+}
+
+ceiling: |md
+  **Ceiling**
+  Tasks OFF cannot solve
+| {
+  style.fill: "#eaf7ea"
+}
+
+guard: |md
+  **Guardrail**
+  Cost per success
+  cache-write volume
+| {
+  style.fill: "#fff8e6"
+}
+
+human: |md
+  **Human, blind**
+  Forced choice A / B
+| {
+  style.fill: "#eaf7ea"
+}
+
+gate: |md
+  **Kill gates**
+  Success drops → stop
+  ON ≈ LEAK → nothing compressed
+  ON ≈ TRIVIAL → grader broken
+| {
+  style.fill: "#ffecec"
+}
+
+goals -> gap: explains parking
+gap -> pre: branch-point track
+pre -> arms: only after a new design
+arms -> runs
+runs -> primary
+runs -> ceiling
+runs -> guard
+runs -> human
+primary -> gate
+ceiling -> gate
+guard -> gate
+human -> gate
