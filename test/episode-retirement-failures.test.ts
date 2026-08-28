@@ -177,6 +177,68 @@ describe("episode retirement failures", () => {
     }
     await fails(h);
   });
+  it("accepts a valid V2 receipt without replacement metrics", async () => {
+    const h = harness();
+    const event = { messages: h.branch.map((x) => x.message) };
+    h.branch.push({
+      type: "custom",
+      customType: "episode-retirement",
+      id: "r",
+      parentId: "u2",
+      timestamp: "r",
+      data: {
+        version: 2,
+        kind: "episode-retirement",
+        sourceEntryIds: ["u1", "a1"],
+        sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry),
+        activeUserEntryId: "u2",
+        capsule: good,
+        provider: "google",
+        model: "gemini-3.7-flash",
+        reasoningEffort: "medium",
+        promptVersion: "capsule-v2",
+        usage: { totalTokens: 7, cost: { total: 0.02 } },
+      },
+    });
+    expect((await h.handlers.context(event, h.ctx)).messages).toHaveLength(1);
+  });
+  it.each([
+    ["malformed", { sourceMessageBytes: "2" }],
+    ["additional key", { extra: 1 }],
+    ["zero completed episode count", { completedEpisodeCount: 0 }],
+    ["zero source message count", { sourceMessageCount: 0 }],
+  ])("V2 receipt with %s replacement metrics fails open", async (_name, replacementMetrics) => {
+    const h = harness();
+    const event = { messages: h.branch.map((x) => x.message) };
+    h.branch.push({
+      type: "custom",
+      customType: "episode-retirement",
+      id: "r",
+      parentId: "u2",
+      timestamp: "r",
+      data: {
+        version: 2,
+        kind: "episode-retirement",
+        sourceEntryIds: ["u1", "a1"],
+        sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry),
+        activeUserEntryId: "u2",
+        capsule: good,
+        provider: "google",
+        model: "gemini-3.7-flash",
+        reasoningEffort: "medium",
+        promptVersion: "capsule-v2",
+        usage: {},
+        replacementMetrics: {
+          completedEpisodeCount: 1,
+          sourceMessageCount: 2,
+          sourceMessageBytes: 3,
+          capsuleTextBytes: 4,
+          ...replacementMetrics,
+        },
+      },
+    });
+    expect(await h.handlers.context(event, h.ctx)).toBeUndefined();
+  });
   it("malformed V2 fails open while V1 projects", async () => {
     const h = harness();
     const event = { messages: h.branch.map((x) => x.message) };

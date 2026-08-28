@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 
@@ -55,6 +56,12 @@ type ReceiptBase = {
   sourceFingerprints: string[];
   activeUserEntryId: string;
   capsule: ContinuationCapsule;
+  replacementMetrics?: {
+    completedEpisodeCount: number;
+    sourceMessageCount: number;
+    sourceMessageBytes: number;
+    capsuleTextBytes: number;
+  };
 };
 export type EpisodeRetirementReceiptV1 = ReceiptBase & { version: 1 };
 export type EpisodeRetirementReceiptV2 = ReceiptBase & {
@@ -283,6 +290,15 @@ function getReceipts(entries: SessionLikeEntry[]): AnyReceipt[] {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function hasReplacementMetrics(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const keys = ["completedEpisodeCount", "sourceMessageCount", "sourceMessageBytes", "capsuleTextBytes"];
+  if (Object.keys(value).length !== keys.length || !keys.every((key) => key in value)) return false;
+  return keys.every((key) =>
+    typeof value[key] === "number" && Number.isInteger(value[key]) &&
+    (key === "completedEpisodeCount" || key === "sourceMessageCount" ? value[key] > 0 : value[key] >= 0)
+  );
+}
 function isReceipt(value: unknown): value is AnyReceipt {
   if (
     !isRecord(value) || (value.version !== 1 && value.version !== 2) ||
@@ -298,7 +314,8 @@ function isReceipt(value: unknown): value is AnyReceipt {
     value.sourceEntryIds.some((id) => !id) ||
     value.sourceEntryIds.length !== value.sourceFingerprints.length ||
     typeof value.activeUserEntryId !== "string" || !value.activeUserEntryId ||
-    !isCapsule(value.capsule)
+    !isCapsule(value.capsule) ||
+    (value.replacementMetrics !== undefined && !hasReplacementMetrics(value.replacementMetrics))
   ) return false;
   return value.version === 1 ||
     (typeof value.provider === "string" && value.provider.length > 0 &&
@@ -421,6 +438,39 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       "Choose the largest contiguous suffix of fully settled completed episodes: retained completed episodes continue consuming context, cache, and local inference time. Never include active work. Supply a concise continuation goal; the configured secondary model authors the capsule.",
     parameters: retireSchema,
     executionMode: "sequential",
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      if (isPartial) {
+        return new Text(theme.fg("warning", "Authoring retirement capsule…"), 0, 0);
+      }
+      const receipt = result.details as EpisodeRetirementReceiptV2 | undefined;
+      const metrics = receipt?.replacementMetrics;
+      if (!receipt || !metrics) {
+        const text = result.content.flatMap((part) =>
+          part.type === "text" ? [part.text] : []
+        ).join("\n");
+        return new Text(theme.fg(context.isError ? "error" : "success", text), 0, 0);
+      }
+      const usage = receipt.usage as Record<string, unknown>;
+      const usageText = [
+        ["input", "input"],
+        ["output", "output"],
+        ["reasoning", "reasoning"],
+        ["cacheRead", "cache read"],
+        ["cacheWrite", "cache write"],
+        ["totalTokens", "total"],
+      ].flatMap(([key, label]) =>
+        typeof usage[key] === "number" ? [`${label} ${usage[key]}`] : []
+      ).concat(
+        isRecord(usage.cost) && typeof usage.cost.total === "number"
+          ? [`$${usage.cost.total}`]
+          : [],
+      ).join(" · ");
+      const compact = `${metrics.completedEpisodeCount} completed episode(s), ${metrics.sourceMessageCount} source message(s), ${metrics.sourceMessageBytes} B serialized source → ${metrics.capsuleTextBytes} B capsule-text; ${receipt.provider}/${receipt.model} (${receipt.reasoningEffort})${usageText ? `; LLM: ${usageText}` : ""}`;
+      if (!expanded) {
+        return new Text(theme.fg("success", `${compact} (${keyHint("app.tools.expand", "to expand")})`), 0, 0);
+      }
+      return new Text(theme.fg("success", `${compact}\n\nProvider-facing context (exact capsule text; not rewritten JSONL history):\n${capsuleText(receipt.capsule, receipt.sourceEntryIds)}\n\nProvenance: ${receipt.sourceEntryIds.join(", ")}`), 0, 0);
+    },
     async execute(_id, params, signal, onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
       if (
@@ -530,14 +580,19 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
         reasoningEffort,
         promptVersion: "capsule-v2",
         usage: response.usage as unknown as Record<string, unknown>,
+        replacementMetrics: {
+          completedEpisodeCount: params.latestCompletedEpisodes,
+          sourceMessageCount: selected.length,
+          sourceMessageBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))),
+          capsuleTextBytes: Buffer.byteLength(capsuleText(capsule, selection.sourceEntryIds)),
+        },
       };
       pi.appendEntry(RECEIPT_TYPE, receipt);
       // Public ExtensionAPI tool-result typing does not expose nested completion usage.
       return {
         content: [{
           type: "text",
-          text: "Episode retirement accepted for source entries: " +
-            receipt.sourceEntryIds.join(", ") + ".",
+          text: "Selected completed episodes were retired into a continuation capsule.",
         }],
         details: receipt,
         usage: response.usage,

@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { mockStreamSimple } = vi.hoisted(() => ({ mockStreamSimple: vi.fn() }));
 vi.mock("@earendil-works/pi-ai/compat", () => ({ streamSimple: mockStreamSimple }));
+vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@earendil-works/pi-coding-agent")>(),
+  keyHint: () => "to expand",
+}));
 
 afterEach(() => {
   for (const key of Object.keys(process.env)) if (key.startsWith("PI_EPISODE_RETIREMENT_")) delete process.env[key];
@@ -128,6 +132,33 @@ describe("episode retirement", () => {
     delete process.env.PI_EPISODE_RETIREMENT_ENABLED;
   });
 
+  it("renders raw no-metrics results, preserving refusal errors", () => {
+    const tools: any[] = [];
+    process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
+    registerEpisodeRetirement({ registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: () => {} } as any);
+    const retire = tools.find((tool) => tool.name === "retire_episodes");
+    const colors: string[] = [];
+    const theme = { fg: (color: string, text: string) => { colors.push(color); return text; } };
+    const refusal = "Episode retirement refused: no unambiguous completed episode suffix.";
+    const error = retire.renderResult(
+      { content: [{ type: "text", text: refusal }] },
+      { expanded: false, isPartial: false },
+      theme,
+      { isError: true },
+    ) as any;
+    expect(error.text).toBe(refusal);
+    expect(colors).toEqual(["error"]);
+    const historical = "Retirement completed before replacement metrics existed.";
+    const prior = retire.renderResult(
+      { content: [{ type: "text", text: historical }] },
+      { expanded: false, isPartial: false },
+      theme,
+      { isError: false },
+    ) as any;
+    expect(prior.text).toBe(historical);
+    expect(colors).toEqual(["error", "success"]);
+  });
+
   it("uses one configured capsule model and persists a V2 receipt with nested usage", async () => {
     const tools: any[] = [];
     const persisted: unknown[] = [];
@@ -152,7 +183,7 @@ describe("episode retirement", () => {
       return { result: async () => ({
         stopReason: "stop",
         content: [{ type: "text", text: "```json\n{\"objective\":\"finish\",\"findings\":[\"done\"],\"decisions\":[],\"unresolved\":[],\"nextStep\":\"ship\"}\n```" }],
-        usage: { input: 2, output: 3, cacheRead: 0, cacheWrite: 0, totalTokens: 5, cost: { total: 0.01 } },
+        usage: { input: 1091, output: 336, reasoning: 171, cacheRead: 0, cacheWrite: 0, totalTokens: 1427, cost: { total: 0.00207825 } },
       }) };
     });
     const pi: any = { registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: (_type: string, data: unknown) => { persisted.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: "receipt", parentId: "u2", timestamp: "receipt-ts", data }); } };
@@ -166,8 +197,33 @@ describe("episode retirement", () => {
     expect(progress.length).toBeGreaterThan(0);
     expect(fingerprintEntry(branch[0])).toBe(originalFingerprint);
     expect((branch[0].message!.content as Array<{ text: string }>)[0].text).toBe(originalText);
-    expect(result.usage).toEqual(expect.objectContaining({ totalTokens: 5 }));
-    expect(persisted[0]).toEqual(expect.objectContaining({ version: 2, provider: "openrouter", model: "google/gemini-3.7-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 5 }) }));
+    expect(result.usage).toEqual(expect.objectContaining({ totalTokens: 1427 }));
+    expect(result.content).toEqual([{ type: "text", text: "Selected completed episodes were retired into a continuation capsule." }]);
+    expect(JSON.stringify(result.content)).not.toContain("CONTINUATION CAPSULE");
+    expect(JSON.stringify(result.content)).not.toContain("u1");
+    expect(persisted[0]).toEqual(expect.objectContaining({ version: 2, provider: "openrouter", model: "google/gemini-3.7-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 1427 }) }));
+    const receipt = persisted[0] as EpisodeRetirementReceipt;
+    const expectedCapsuleText = "[CONTINUATION CAPSULE — episode retirement]\nObjective: finish\nFindings:\n- done\nNext step: ship\nOriginal source entry IDs (recover with recall_episode): u1, a1, t1, a2, t2, a3";
+    expect(receipt.replacementMetrics).toEqual({
+      completedEpisodeCount: 1,
+      sourceMessageCount: 6,
+      sourceMessageBytes: Buffer.byteLength(JSON.stringify(branch.slice(0, 6).map((entry) => entry.message))),
+      capsuleTextBytes: Buffer.byteLength(expectedCapsuleText),
+    });
+    const theme = { fg: (_color: string, text: string) => text };
+    const partial = retire.renderResult(result, { expanded: false, isPartial: true }, theme) as any;
+    const compact = retire.renderResult(result, { expanded: false, isPartial: false }, theme) as any;
+    const expanded = retire.renderResult(result, { expanded: true, isPartial: false }, theme) as any;
+    expect(partial.text).toBe("Authoring retirement capsule…");
+    expect(partial.text).not.toContain(expectedCapsuleText);
+    expect(compact.text).toContain("1 completed episode(s), 6 source message(s)");
+    expect(compact.text).toContain("B serialized source →");
+    expect(compact.text).toContain("B capsule-text");
+    expect(compact.text).toContain("LLM: input 1091 · output 336 · reasoning 171 · cache read 0 · cache write 0 · total 1427 · $0.00207825");
+    expect(compact.text).not.toContain(expectedCapsuleText);
+    expect(compact.text).not.toContain("u1, a1, t1, a2, t2, a3");
+    expect(expanded.text).toContain(expectedCapsuleText);
+    expect(expanded.text).toContain("Provenance: u1, a1, t1, a2, t2, a3");
     delete process.env.PI_EPISODE_RETIREMENT_ENABLED; delete process.env.PI_EPISODE_RETIREMENT_MODEL; delete process.env.PI_EPISODE_RETIREMENT_REASONING_EFFORT;
   });
 
