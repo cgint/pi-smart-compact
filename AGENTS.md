@@ -45,7 +45,7 @@
 npm run precommit
 ```
 
-Runs: `npm audit --audit-level=moderate` → must pass. (No tests or TypeScript build in this repo.)
+Runs TypeScript typecheck, tests, then `npm audit --audit-level=moderate`; all must pass.
 
 ## Regular maintenance
 

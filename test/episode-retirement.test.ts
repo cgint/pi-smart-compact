@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const { mockStreamSimple } = vi.hoisted(() => ({ mockStreamSimple: vi.fn() }));
+vi.mock("@earendil-works/pi-ai/compat", () => ({ streamSimple: mockStreamSimple }));
+
+afterEach(() => {
+  for (const key of Object.keys(process.env)) if (key.startsWith("PI_EPISODE_RETIREMENT_")) delete process.env[key];
+  mockStreamSimple.mockReset();
+});
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import {
   applyEpisodeRetirement,
@@ -98,8 +106,10 @@ describe("episode retirement", () => {
     registerEpisodeRetirement(pi);
     const retire = tools.find((tool) => tool.name === "retire_episodes");
     const recall = tools.find((tool) => tool.name === "recall_episode");
-    const ctx = { sessionManager: { getBranch: () => branch, getTree: () => [] } };
-    const accepted = await retire.execute("call", { latestCompletedEpisodes: 1, capsule }, undefined, undefined, ctx);
+    const model = { provider: "google", id: "gemini-3.7-flash" };
+    mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: { totalTokens: 1 } }) });
+    const ctx: any = { sessionManager: { getBranch: () => branch, getTree: () => [] }, modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }) } };
+    const accepted = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue safely" }, undefined, undefined, ctx);
     expect(accepted.isError).toBeUndefined();
     expect(persisted).toHaveLength(1);
     const hookResult = await handlers.context({ type: "context", messages: entries.map((entry) => entry.message) }, ctx);
@@ -116,5 +126,68 @@ describe("episode retirement", () => {
     expect(recalled.isError).toBeUndefined();
     expect(recalled.content[0].text).toContain('"id": "t1"');
     delete process.env.PI_EPISODE_RETIREMENT_ENABLED;
+  });
+
+  it("uses one configured capsule model and persists a V2 receipt with nested usage", async () => {
+    const tools: any[] = [];
+    const persisted: unknown[] = [];
+    const progress: unknown[] = [];
+    const branch: SessionLikeEntry[] = structuredClone(entries);
+    ((branch[0].message!.content as Array<{ text: string }>)[0]).text = "OPENAI_API_KEY=sk-proj-selectedSecret Authorization: Bearer ghp_branchSecret";
+    const originalFingerprint = fingerprintEntry(branch[0]);
+    const originalText = (branch[0].message!.content as Array<{ text: string }>)[0].text;
+    const model = { provider: "openrouter", id: "google/gemini-3.7-flash" };
+    mockStreamSimple.mockImplementation((_model: unknown, context: any, options: any) => {
+      expect(_model).toBe(model);
+      expect(options.reasoning).toBe("high");
+      expect(options).not.toHaveProperty("reasoningEffort");
+      const prompt = context.messages[0].content[0].text;
+      expect(prompt).toContain('"id":"u1"');
+      expect(prompt).toContain("continue from the investigation");
+      expect(prompt).toContain("finish safely");
+      expect(prompt).toContain("[REDACTED]");
+      expect(prompt).not.toContain("selectedSecret");
+      expect(prompt).not.toContain("branchSecret");
+      expect(prompt).not.toContain("goalSecret");
+      return { result: async () => ({
+        stopReason: "stop",
+        content: [{ type: "text", text: "```json\n{\"objective\":\"finish\",\"findings\":[\"done\"],\"decisions\":[],\"unresolved\":[],\"nextStep\":\"ship\"}\n```" }],
+        usage: { input: 2, output: 3, cacheRead: 0, cacheWrite: 0, totalTokens: 5, cost: { total: 0.01 } },
+      }) };
+    });
+    const pi: any = { registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: (_type: string, data: unknown) => { persisted.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: "receipt", parentId: "u2", timestamp: "receipt-ts", data }); } };
+    process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
+    process.env.PI_EPISODE_RETIREMENT_MODEL = "openrouter/google/gemini-3.7-flash";
+    process.env.PI_EPISODE_RETIREMENT_REASONING_EFFORT = "high";
+    registerEpisodeRetirement(pi);
+    const retire = tools.find((tool) => tool.name === "retire_episodes");
+    expect(Object.keys(retire.parameters.properties)).toEqual(["latestCompletedEpisodes", "continuationGoal"]);
+    const result = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "finish safely with token=goalSecret" }, undefined, (update: unknown) => progress.push(update), { sessionManager: { getBranch: () => branch, getTree: () => [] }, modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }), complete: () => { throw new Error("complete must not be called"); } } });
+    expect(progress.length).toBeGreaterThan(0);
+    expect(fingerprintEntry(branch[0])).toBe(originalFingerprint);
+    expect((branch[0].message!.content as Array<{ text: string }>)[0].text).toBe(originalText);
+    expect(result.usage).toEqual(expect.objectContaining({ totalTokens: 5 }));
+    expect(persisted[0]).toEqual(expect.objectContaining({ version: 2, provider: "openrouter", model: "google/gemini-3.7-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 5 }) }));
+    delete process.env.PI_EPISODE_RETIREMENT_ENABLED; delete process.env.PI_EPISODE_RETIREMENT_MODEL; delete process.env.PI_EPISODE_RETIREMENT_REASONING_EFFORT;
+  });
+
+  it("preserves the provider prefix while removing only the selected suffix", () => {
+    const earlier = [user("u0", "earlier request"), assistant("a0", "earlier result")];
+    const selected = [user("u1", "retire this request"), assistant("a1", "settled result")];
+    const active = user("u2", "active request");
+    const later = [assistant("a2", "post-user assistant"), tool("t2", "post-call")];
+    const all = [...earlier, ...selected, active, ...later];
+    const receipt: EpisodeRetirementReceipt = { version: 1, kind: "episode-retirement", sourceEntryIds: selected.map((entry) => entry.id), sourceFingerprints: selected.map(fingerprintEntry), activeUserEntryId: "u2", capsule };
+    const projected = applyEpisodeRetirement(all, receipt);
+    expect(projected.applied).toBe(true);
+    if (!projected.applied) throw new Error(projected.reason);
+    expect(projected.messages.slice(0, earlier.length)).toEqual(earlier.map((entry) => entry.message));
+    expect(projected.messages[0]).toBe(earlier[0].message);
+    expect(projected.messages[1]).toBe(earlier[1].message);
+    expect(JSON.stringify(projected.messages.slice(0, earlier.length))).toBe(JSON.stringify(earlier.map((entry) => entry.message)));
+    expect(projected.messages).toHaveLength(earlier.length + 1 + later.length);
+    expect(JSON.stringify(projected.messages.slice(earlier.length + 1))).toBe(JSON.stringify(later.map((entry) => entry.message)));
+    expect((projected.messages[earlier.length].content as Array<{ text: string }>)[0].text).toContain("CONTINUATION CAPSULE");
+    expect((projected.messages[earlier.length].content as Array<{ text: string }>)[1].text).toBe("active request");
   });
 });

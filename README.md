@@ -28,6 +28,19 @@ By default the extension is **disabled** (Pi's built-in compaction runs). Set th
 
 Edit `prompts/smart-compaction-prompt.md` to change compaction behavior. No code changes needed — reload Pi with `/reload`.
 
+### Episode retirement capsule model
+
+Episode retirement remains off by default. Enable it with `PI_EPISODE_RETIREMENT_ENABLED=true`. When the active agent calls `retire_episodes`, it chooses the completed-episode count and supplies `continuationGoal`; one configured secondary model alone authors the persisted capsule.
+
+```bash
+export PI_EPISODE_RETIREMENT_MODEL=google/gemini-3.7-flash
+export PI_EPISODE_RETIREMENT_REASONING_EFFORT=medium
+```
+
+`PI_EPISODE_RETIREMENT_MODEL` is one `provider/model` value (the first slash separates provider from model ID); there is no model list or active-model fallback. The reasoning effort must be a Pi ThinkingLevel. `continuationGoal` must be non-empty and at most 1,000 characters. Capsules have exactly five fields; fields are bounded to 2,000 characters, items to 1,000 characters, arrays to 32 items, and serialized capsule JSON to 8,000 characters. V1 receipts remain projectable and recallable.
+
+Retirement preserves the provider-input prefix before the selected suffix exactly and performs a one-time suffix recache. It may avoid recurring cached-token processing and latency; local-model speedup depends on the server's prefix/KV-cache retention and is not guaranteed. Source text is redacted before capsule-model egress by default; set `PI_EPISODE_RETIREMENT_REDACT=false` only when that is explicitly appropriate. Model/auth/completion/capsule errors abort retirement before a receipt is appended.
+
 ## Structure
 
 - **`index.ts`** — Entry point (delegates to `src/`)

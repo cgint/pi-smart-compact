@@ -1,12 +1,35 @@
 import { createHash } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { streamSimple } from "@earendil-works/pi-ai/compat";
+import type { ThinkingLevel } from "@earendil-works/pi-ai";
 
 /** Public extension hooks expose these structurally; avoid importing Pi's private transitive agent-core package. */
-type AgentMessage = { role: string; content: unknown; timestamp: number; [key: string]: unknown };
+type AgentMessage = {
+  role: string;
+  content: unknown;
+  timestamp: number;
+  [key: string]: unknown;
+};
 
 const ENABLED_VAR = "PI_EPISODE_RETIREMENT_ENABLED";
 const RECEIPT_TYPE = "episode-retirement";
+const MODEL_VAR = "PI_EPISODE_RETIREMENT_MODEL";
+const EFFORT_VAR = "PI_EPISODE_RETIREMENT_REASONING_EFFORT";
+const REDACT_VAR = "PI_EPISODE_RETIREMENT_REDACT";
+const THINKING_LEVELS = new Set<ThinkingLevel>([
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+export const CAPSULE_MAX_FIELD_CHARS = 2_000;
+export const CAPSULE_MAX_ITEM_CHARS = 1_000;
+export const CAPSULE_MAX_ITEMS = 32;
+export const CAPSULE_MAX_JSON_CHARS = 8_000;
+export const CONTINUATION_GOAL_MAX_CHARS = 1_000;
 
 export type SessionLikeEntry = {
   type: string;
@@ -26,14 +49,26 @@ export type ContinuationCapsule = {
   nextStep: string;
 };
 
-export type EpisodeRetirementReceipt = {
-  version: 1;
+type ReceiptBase = {
   kind: "episode-retirement";
   sourceEntryIds: string[];
   sourceFingerprints: string[];
   activeUserEntryId: string;
   capsule: ContinuationCapsule;
 };
+export type EpisodeRetirementReceiptV1 = ReceiptBase & { version: 1 };
+export type EpisodeRetirementReceiptV2 = ReceiptBase & {
+  version: 2;
+  provider: string;
+  model: string;
+  reasoningEffort: ThinkingLevel;
+  promptVersion: string;
+  usage: Record<string, unknown>;
+};
+export type EpisodeRetirementReceipt =
+  | EpisodeRetirementReceiptV1
+  | EpisodeRetirementReceiptV2;
+type AnyReceipt = EpisodeRetirementReceipt;
 
 type Selection = {
   sourceEntryIds: string[];
@@ -41,40 +76,66 @@ type Selection = {
   activeUserEntryId: string;
 };
 
-type Projection = { applied: true; messages: AgentMessage[] } | { applied: false; reason: string };
+type Projection = { applied: true; messages: AgentMessage[] } | {
+  applied: false;
+  reason: string;
+};
 
-function isPlainMessage(entry: SessionLikeEntry): entry is SessionLikeEntry & { message: AgentMessage } {
+function isPlainMessage(
+  entry: SessionLikeEntry,
+): entry is SessionLikeEntry & { message: AgentMessage } {
   return entry.type === "message" && entry.message !== undefined;
 }
 
 function isSupportedMessage(message: AgentMessage): boolean {
-  if (message.role === "user" && typeof message.content === "string") return true;
-  if (message.role === "user" || message.role === "assistant" || message.role === "toolResult") {
-    return Array.isArray(message.content) && !message.content.some((part) => part.type === "image");
+  if (message.role === "user" && typeof message.content === "string") {
+    return true;
+  }
+  if (
+    message.role === "user" || message.role === "assistant" ||
+    message.role === "toolResult"
+  ) {
+    return Array.isArray(message.content) &&
+      !message.content.some((part) => part.type === "image");
   }
   return false;
 }
 
 export function fingerprintEntry(entry: SessionLikeEntry): string {
-  return createHash("sha256").update(JSON.stringify(entry.message)).digest("hex");
+  return createHash("sha256").update(JSON.stringify(entry.message)).digest(
+    "hex",
+  );
 }
 
-export function selectLatestCompletedEpisodes(entries: SessionLikeEntry[], count: number): Selection | undefined {
+export function selectLatestCompletedEpisodes(
+  entries: SessionLikeEntry[],
+  count: number,
+): Selection | undefined {
   if (!Number.isInteger(count) || count < 1) return undefined;
-  if (entries.some((entry) => !isPlainMessage(entry) || !isSupportedMessage(entry.message))) return undefined;
+  if (
+    entries.some((entry) =>
+      !isPlainMessage(entry) || !isSupportedMessage(entry.message)
+    )
+  ) return undefined;
 
-  const userIndexes = entries.flatMap((entry, index) => entry.message!.role === "user" ? [index] : []);
+  const userIndexes = entries.flatMap((entry, index) =>
+    entry.message!.role === "user" ? [index] : []
+  );
   if (userIndexes.length < count + 1) return undefined;
   const activeUserIndex = userIndexes.at(-1)!;
   const sourceStart = userIndexes[userIndexes.length - count - 1];
   const selected = entries.slice(sourceStart, activeUserIndex);
-  if (selected.length === 0 || selected.at(-1)!.message!.role !== "assistant") return undefined;
+  if (selected.length === 0 || selected.at(-1)!.message!.role !== "assistant") {
+    return undefined;
+  }
 
   const openToolCalls = new Set<string>();
   for (const entry of selected) {
     const message = entry.message!;
     if (message.role === "assistant") {
-      for (const part of message.content as Array<{ type: string; id?: string }>) if (part.type === "toolCall" && part.id) openToolCalls.add(part.id);
+      for (
+        const part of message.content as Array<{ type: string; id?: string }>
+      ) if (part.type === "toolCall" && part.id) openToolCalls.add(part.id);
     }
     if (message.role === "toolResult") {
       if (!openToolCalls.delete(message.toolCallId as string)) return undefined;
@@ -89,35 +150,80 @@ export function selectLatestCompletedEpisodes(entries: SessionLikeEntry[], count
   };
 }
 
-function capsuleText(capsule: ContinuationCapsule, sourceEntryIds: string[]): string {
-  const list = (title: string, items: string[]) => items.length ? "\n" + title + ":\n" + items.map((item) => "- " + item).join("\n") : "";
+function capsuleText(
+  capsule: ContinuationCapsule,
+  sourceEntryIds: string[],
+): string {
+  const list = (title: string, items: string[]) =>
+    items.length
+      ? "\n" + title + ":\n" + items.map((item) => "- " + item).join("\n")
+      : "";
   return "[CONTINUATION CAPSULE — episode retirement]\n" +
     "Objective: " + capsule.objective +
     list("Findings", capsule.findings) + list("Decisions", capsule.decisions) +
     list("Unresolved", capsule.unresolved) +
     "\nNext step: " + capsule.nextStep +
-    "\nOriginal source entry IDs (recover with recall_episode): " + sourceEntryIds.join(", ");
+    "\nOriginal source entry IDs (recover with recall_episode): " +
+    sourceEntryIds.join(", ");
 }
 
-function validatedRange(entries: SessionLikeEntry[], receipt: EpisodeRetirementReceipt): { start: number; activeIndex: number } | Projection {
-  const activeIndex = entries.findIndex((entry) => entry.id === receipt.activeUserEntryId);
-  const sourceIndexes = receipt.sourceEntryIds.map((id) => entries.findIndex((entry) => entry.id === id));
-  if (activeIndex < 0 || sourceIndexes.some((index) => index < 0)) return { applied: false, reason: "source entries unavailable" };
+function validatedRange(
+  entries: SessionLikeEntry[],
+  receipt: AnyReceipt,
+): { start: number; activeIndex: number } | Projection {
+  const activeIndex = entries.findIndex((entry) =>
+    entry.id === receipt.activeUserEntryId
+  );
+  const sourceIndexes = receipt.sourceEntryIds.map((id) =>
+    entries.findIndex((entry) => entry.id === id)
+  );
+  if (activeIndex < 0 || sourceIndexes.some((index) => index < 0)) {
+    return { applied: false, reason: "source entries unavailable" };
+  }
   const start = sourceIndexes[0];
-  if (start < 0 || sourceIndexes.some((index, offset) => index !== start + offset) || start >= activeIndex) return { applied: false, reason: "noncontiguous source entries" };
+  if (
+    start < 0 ||
+    sourceIndexes.some((index, offset) => index !== start + offset) ||
+    start >= activeIndex
+  ) return { applied: false, reason: "noncontiguous source entries" };
   const selected = entries.slice(start, activeIndex);
-  if (selected.length !== receipt.sourceEntryIds.length || selected.some((entry, index) => !isPlainMessage(entry) || fingerprintEntry(entry) !== receipt.sourceFingerprints[index])) return { applied: false, reason: "fingerprint mismatch" };
-  if (!isPlainMessage(entries[activeIndex]) || entries[activeIndex].message.role !== "user" || !isSupportedMessage(entries[activeIndex].message)) return { applied: false, reason: "active episode is not protected" };
-  if (entries.some((entry) => !isPlainMessage(entry) || !isSupportedMessage(entry.message))) return { applied: false, reason: "unsupported session shape" };
+  if (
+    selected.length !== receipt.sourceEntryIds.length ||
+    selected.some((entry, index) =>
+      !isPlainMessage(entry) ||
+      fingerprintEntry(entry) !== receipt.sourceFingerprints[index]
+    )
+  ) return { applied: false, reason: "fingerprint mismatch" };
+  if (
+    !isPlainMessage(entries[activeIndex]) ||
+    entries[activeIndex].message.role !== "user" ||
+    !isSupportedMessage(entries[activeIndex].message)
+  ) return { applied: false, reason: "active episode is not protected" };
+  if (
+    entries.some((entry) =>
+      !isPlainMessage(entry) || !isSupportedMessage(entry.message)
+    )
+  ) return { applied: false, reason: "unsupported session shape" };
   return { start, activeIndex };
 }
 
 function prependCapsule(message: AgentMessage, text: string): AgentMessage {
-  if (typeof message.content === "string") return { ...message, content: text + "\n\n" + message.content };
-  return { ...message, content: [{ type: "text", text: text + "\n\n" }, ...(message.content as unknown[])] };
+  if (typeof message.content === "string") {
+    return { ...message, content: text + "\n\n" + message.content };
+  }
+  return {
+    ...message,
+    content: [
+      { type: "text", text: text + "\n\n" },
+      ...(message.content as unknown[]),
+    ],
+  };
 }
 
-export function applyEpisodeRetirement(entries: SessionLikeEntry[], receipt: EpisodeRetirementReceipt): Projection {
+export function applyEpisodeRetirement(
+  entries: SessionLikeEntry[],
+  receipt: AnyReceipt,
+): Projection {
   const range = validatedRange(entries, receipt);
   if ("applied" in range) return range;
   const capsule = capsuleText(receipt.capsule, receipt.sourceEntryIds);
@@ -127,89 +233,401 @@ export function applyEpisodeRetirement(entries: SessionLikeEntry[], receipt: Epi
   return { applied: true, messages };
 }
 
-export function projectEventMessages(entries: SessionLikeEntry[], eventMessages: AgentMessage[], receipt: EpisodeRetirementReceipt): Projection {
-  if (entries.length !== eventMessages.length || entries.some((entry, index) => fingerprintEntry(entry) !== createHash("sha256").update(JSON.stringify(eventMessages[index])).digest("hex"))) return { applied: false, reason: "event message mismatch" };
+export function projectEventMessages(
+  entries: SessionLikeEntry[],
+  eventMessages: AgentMessage[],
+  receipt: AnyReceipt,
+): Projection {
+  if (
+    entries.length !== eventMessages.length ||
+    entries.some((entry, index) =>
+      fingerprintEntry(entry) !==
+        createHash("sha256").update(JSON.stringify(eventMessages[index]))
+          .digest("hex")
+    )
+  ) return { applied: false, reason: "event message mismatch" };
   const range = validatedRange(entries, receipt);
   if ("applied" in range) return range;
   const messages = [...eventMessages];
   messages.splice(range.start, range.activeIndex - range.start);
-  messages[range.start] = prependCapsule(messages[range.start], capsuleText(receipt.capsule, receipt.sourceEntryIds));
+  messages[range.start] = prependCapsule(
+    messages[range.start],
+    capsuleText(receipt.capsule, receipt.sourceEntryIds),
+  );
   return { applied: true, messages };
 }
 
 function activePathIsSupported(entries: SessionLikeEntry[]): boolean {
-  return !entries.some((entry) => entry.type === "compaction" || entry.type === "branch_summary" || (entry.type === "custom" && entry.customType !== RECEIPT_TYPE));
+  return !entries.some((entry) =>
+    entry.type === "compaction" || entry.type === "branch_summary" ||
+    (entry.type === "custom" && entry.customType !== RECEIPT_TYPE)
+  );
 }
 
 function treeHasBranch(nodes: Array<{ children?: unknown[] }>): boolean {
-  return nodes.some((node) => (node.children?.length ?? 0) > 1 || treeHasBranch((node.children ?? []) as Array<{ children?: unknown[] }>));
+  return nodes.some((node) =>
+    (node.children?.length ?? 0) > 1 ||
+    treeHasBranch((node.children ?? []) as Array<{ children?: unknown[] }>)
+  );
 }
 
-function getReceipts(entries: SessionLikeEntry[]): EpisodeRetirementReceipt[] {
-  return entries.flatMap((entry) => entry.type === "custom" && entry.customType === RECEIPT_TYPE && isReceipt(entry.data) ? [entry.data] : []);
+function getReceipts(entries: SessionLikeEntry[]): AnyReceipt[] {
+  return entries.flatMap((entry) =>
+    entry.type === "custom" && entry.customType === RECEIPT_TYPE &&
+      isReceipt(entry.data)
+      ? [entry.data]
+      : []
+  );
 }
 
-function isReceipt(value: unknown): value is EpisodeRetirementReceipt {
-  const candidate = value as Partial<EpisodeRetirementReceipt> | undefined;
-  return candidate?.version === 1 && candidate.kind === RECEIPT_TYPE && Array.isArray(candidate.sourceEntryIds) && Array.isArray(candidate.sourceFingerprints) && typeof candidate.activeUserEntryId === "string" && typeof candidate.capsule?.objective === "string";
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
-const capsuleSchema = Type.Object({
-  objective: Type.String(), findings: Type.Array(Type.String()), decisions: Type.Array(Type.String()),
-  unresolved: Type.Array(Type.String()), nextStep: Type.String(),
+function isReceipt(value: unknown): value is AnyReceipt {
+  if (
+    !isRecord(value) || (value.version !== 1 && value.version !== 2) ||
+    value.kind !== RECEIPT_TYPE ||
+    !Array.isArray(value.sourceEntryIds) ||
+    !value.sourceEntryIds.every((id) => typeof id === "string") ||
+    !Array.isArray(value.sourceFingerprints) ||
+    !value.sourceFingerprints.every((fingerprint) =>
+      typeof fingerprint === "string" && /^[a-f0-9]{64}$/.test(fingerprint)
+    ) ||
+    value.sourceEntryIds.length === 0 ||
+    new Set(value.sourceEntryIds).size !== value.sourceEntryIds.length ||
+    value.sourceEntryIds.some((id) => !id) ||
+    value.sourceEntryIds.length !== value.sourceFingerprints.length ||
+    typeof value.activeUserEntryId !== "string" || !value.activeUserEntryId ||
+    !isCapsule(value.capsule)
+  ) return false;
+  return value.version === 1 ||
+    (typeof value.provider === "string" && value.provider.length > 0 &&
+      typeof value.model === "string" && value.model.length > 0 &&
+      THINKING_LEVELS.has(value.reasoningEffort as ThinkingLevel) &&
+      value.promptVersion === "capsule-v2" && isRecord(value.usage));
+}
+function isCapsule(value: unknown): value is ContinuationCapsule {
+  if (
+    !isRecord(value) || Object.keys(value).length !== 5 ||
+    !["objective", "findings", "decisions", "unresolved", "nextStep"].every((
+      key,
+    ) => key in value)
+  ) return false;
+  const validText = (text: unknown, required = false) =>
+    typeof text === "string" && text.length <= CAPSULE_MAX_FIELD_CHARS &&
+    (!required || text.trim().length > 0);
+  const validItems = (items: unknown) =>
+    Array.isArray(items) && items.length <= CAPSULE_MAX_ITEMS &&
+    items.every((item) =>
+      typeof item === "string" && item.length <= CAPSULE_MAX_ITEM_CHARS
+    );
+  return JSON.stringify(value).length <= CAPSULE_MAX_JSON_CHARS &&
+    validText(value.objective, true) && validText(value.nextStep, true) &&
+    validItems(value.findings) && validItems(value.decisions) &&
+    validItems(value.unresolved);
+}
+export function parseCapsuleModel(
+  value = process.env[MODEL_VAR] ?? "google/gemini-3.7-flash",
+): { provider: string; model: string } {
+  if (value !== value.trim()) {
+    throw new Error(
+      MODEL_VAR + " must not contain leading or trailing whitespace.",
+    );
+  }
+  const slash = value.indexOf("/");
+  if (slash < 1 || slash === value.length - 1) {
+    throw new Error(MODEL_VAR + " must be one provider/model value.");
+  }
+  return { provider: value.slice(0, slash), model: value.slice(slash + 1) };
+}
+export function configuredReasoningEffort(
+  value = process.env[EFFORT_VAR] ?? "medium",
+): ThinkingLevel {
+  if (!THINKING_LEVELS.has(value as ThinkingLevel)) {
+    throw new Error(EFFORT_VAR + " must be a Pi ThinkingLevel.");
+  }
+  return value as ThinkingLevel;
+}
+function redact(text: string): string {
+  if (process.env[REDACT_VAR] === "false") return text;
+  return text
+    .replace(
+      /(-----BEGIN [A-Z ]*PRIVATE KEY-----)[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----)/g,
+      "$1[REDACTED]$2",
+    )
+    .replace(
+      /(authorization\s*[:=]\s*(?:[\"])?bearer\s+)[^\s,\"}]+/gi,
+      "$1[REDACTED]",
+    )
+    .replace(
+      /((?:[\"])?(?:api[_-]?key|token|secret|password)[\w-]*(?:[\"])?\s*[:=]\s*(?:[\"])?)[^\s,\"}]+/gi,
+      "$1[REDACTED]",
+    )
+    .replace(
+      /\b(?:sk-ant-[A-Za-z0-9_-]+|sk-proj-[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]+|AIza[A-Za-z0-9_-]+|ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|xox[a-z]-[A-Za-z0-9-]+)\b/g,
+      "[REDACTED]",
+    );
+}
+function parseCapsule(text: string): ContinuationCapsule {
+  const fence = String.fromCharCode(96).repeat(3);
+  const clean = text.trim().replace(
+    new RegExp("^" + fence + "(?:json)?\\s*", "i"),
+    "",
+  ).replace(new RegExp("\\s*" + fence + "$"), "");
+  let value: unknown;
+  try {
+    value = JSON.parse(clean);
+  } catch {
+    throw new Error("Capsule model returned invalid JSON.");
+  }
+  if (!isCapsule(value)) {
+    throw new Error("Capsule model returned an invalid capsule.");
+  }
+  return value;
+}
+function capsuleRequest(
+  selected: SessionLikeEntry[],
+  active: AgentMessage,
+  continuationGoal: string,
+): string {
+  const payload = redact(
+    JSON.stringify({
+      selectedEpisodeEntries: selected,
+      activeRequest: active,
+      continuationGoal,
+    }),
+  );
+  return "Return JSON only with exactly objective, findings, decisions, unresolved, nextStep; no extras. objective/nextStep non-empty; fields <= " +
+    CAPSULE_MAX_FIELD_CHARS + ", items <= " + CAPSULE_MAX_ITEM_CHARS +
+    ", arrays <= " + CAPSULE_MAX_ITEMS + ", JSON <= " + CAPSULE_MAX_JSON_CHARS +
+    ". Retain working state only; do not copy world/source knowledge.\n" +
+    payload;
+}
+const retireSchema = Type.Object({
+  latestCompletedEpisodes: Type.Integer({ minimum: 1 }),
+  continuationGoal: Type.String({
+    minLength: 1,
+    maxLength: CONTINUATION_GOAL_MAX_CHARS,
+  }),
 });
 
 export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
   if (process.env[ENABLED_VAR] !== "true") return;
 
   pi.registerTool({
-    name: "retire_episodes", label: "retire episodes",
-    description: "Replace the latest N completed episodes with your structured continuation capsule. The active episode is never selected.",
-    parameters: Type.Object({ latestCompletedEpisodes: Type.Integer({ minimum: 1 }), capsule: capsuleSchema }),
+    name: "retire_episodes",
+    label: "retire episodes",
+    description:
+      "Choose the largest contiguous suffix of fully settled completed episodes: retained completed episodes continue consuming context, cache, and local inference time. Never include active work. Supply a concise continuation goal; the configured secondary model authors the capsule.",
+    parameters: retireSchema,
     executionMode: "sequential",
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, params, signal, onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
-      if (!activePathIsSupported(branch) || treeHasBranch(ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>) || getReceipts(branch).length > 0) return { content: [{ type: "text", text: "Episode retirement refused: unsupported or overlapping session shape." }], details: {}, isError: true };
+      if (
+        typeof params.continuationGoal !== "string" ||
+        !params.continuationGoal.trim() ||
+        params.continuationGoal.length > CONTINUATION_GOAL_MAX_CHARS
+      ) {
+        throw new Error(
+          "Episode retirement requires a non-empty bounded continuationGoal.",
+        );
+      }
+      if (
+        !activePathIsSupported(branch) ||
+        treeHasBranch(
+          ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>,
+        ) || getReceipts(branch).length > 0
+      ) {
+        throw new Error(
+          "Episode retirement refused: unsupported or overlapping session shape.",
+        );
+      }
       const messageEntries = branch.filter(isPlainMessage);
-      const selection = selectLatestCompletedEpisodes(messageEntries, params.latestCompletedEpisodes);
-      if (!selection) return { content: [{ type: "text", text: "Episode retirement refused: no unambiguous completed episode suffix." }], details: {}, isError: true };
-      const receipt: EpisodeRetirementReceipt = { version: 1, kind: RECEIPT_TYPE, ...selection, capsule: params.capsule };
+      const selection = selectLatestCompletedEpisodes(
+        messageEntries,
+        params.latestCompletedEpisodes,
+      );
+      if (!selection) {
+        throw new Error(
+          "Episode retirement refused: no unambiguous completed episode suffix.",
+        );
+      }
+      const configured = parseCapsuleModel();
+      const reasoningEffort = configuredReasoningEffort();
+      const model = ctx.modelRegistry.find(
+        configured.provider,
+        configured.model,
+      );
+      if (!model) {
+        throw new Error(
+          "Episode retirement model unavailable: " + configured.provider + "/" +
+            configured.model + ".",
+        );
+      }
+      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+      if (!auth.ok) {
+        throw new Error(
+          "Episode retirement model has no configured authentication: " +
+            configured.provider + "/" + configured.model + ".",
+        );
+      }
+      // Public ExtensionAPI progress typing does not expose this structural update shape.
+      onUpdate?.(
+        {
+          content: [{
+            type: "text",
+            text:
+              "Authoring continuation capsule with configured retirement model…",
+          }],
+        } as any,
+      );
+      if (signal?.aborted) {
+        throw new Error("Episode retirement capsule request aborted.");
+      }
+      const active = messageEntries.find((entry) =>
+        entry.id === selection.activeUserEntryId
+      )!.message!;
+      const selected = messageEntries.filter((entry) =>
+        selection.sourceEntryIds.includes(entry.id)
+      );
+      // Same public auth + streamSimple boundary used by pi-ai-consortium.
+      const response = await streamSimple(model, {
+        messages: [{
+          role: "user",
+          content: [{
+            type: "text",
+            text: capsuleRequest(selected, active, params.continuationGoal),
+          }],
+          timestamp: Date.now(),
+        }],
+      }, {
+        signal,
+        reasoning: reasoningEffort,
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        env: auth.env,
+      }).result();
+      if (signal?.aborted) {
+        throw new Error("Episode retirement capsule request aborted.");
+      }
+      if (response.stopReason !== "stop") {
+        throw new Error("Capsule model did not stop successfully.");
+      }
+      const text = response.content
+        .flatMap((part) => part.type === "text" ? [part.text] : [])
+        .join("\n");
+      if (!text.trim()) {
+        throw new Error("Capsule model returned an empty response.");
+      }
+      const capsule = parseCapsule(text);
+      const receipt: EpisodeRetirementReceiptV2 = {
+        version: 2,
+        kind: RECEIPT_TYPE,
+        ...selection,
+        capsule,
+        provider: configured.provider,
+        model: configured.model,
+        reasoningEffort,
+        promptVersion: "capsule-v2",
+        usage: response.usage as unknown as Record<string, unknown>,
+      };
       pi.appendEntry(RECEIPT_TYPE, receipt);
-      return { content: [{ type: "text", text: "Episode retirement accepted for source entries: " + receipt.sourceEntryIds.join(", ") + "." }], details: receipt };
+      // Public ExtensionAPI tool-result typing does not expose nested completion usage.
+      return {
+        content: [{
+          type: "text",
+          text: "Episode retirement accepted for source entries: " +
+            receipt.sourceEntryIds.join(", ") + ".",
+        }],
+        details: receipt,
+        usage: response.usage,
+      } as any;
     },
   });
 
   pi.registerTool({
-    name: "recall_episode", label: "recall retired episode",
-    description: "Mechanically retrieve the exact original messages covered by the stored episode-retirement receipt.",
-    parameters: Type.Object({ sourceEntryId: Type.Optional(Type.String()) }), executionMode: "sequential",
+    name: "recall_episode",
+    label: "recall retired episode",
+    description:
+      "Mechanically retrieve the exact original messages covered by the stored episode-retirement receipt.",
+    parameters: Type.Object({ sourceEntryId: Type.Optional(Type.String()) }),
+    executionMode: "sequential",
     async execute(_id, params, _signal, _onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
-      if (!activePathIsSupported(branch) || treeHasBranch(ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>)) return { content: [{ type: "text", text: "Episode recall refused: unsupported session shape." }], details: {}, isError: true };
+      if (
+        !activePathIsSupported(branch) ||
+        treeHasBranch(
+          ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>,
+        )
+      ) throw new Error("Episode recall refused: unsupported session shape.");
       const receipts = getReceipts(branch);
-      if (receipts.length !== 1) return { content: [{ type: "text", text: "Episode recall refused: expected exactly one receipt." }], details: {}, isError: true };
+      if (receipts.length !== 1) {
+        throw new Error(
+          "Episode recall refused: expected exactly one receipt.",
+        );
+      }
       const receipt = receipts[0];
-      const originals = receipt.sourceEntryIds.map((id) => branch.find((entry) => entry.id === id));
-      if (originals.some((entry, index) => !entry || !isPlainMessage(entry) || fingerprintEntry(entry) !== receipt.sourceFingerprints[index])) {
-        return { content: [{ type: "text", text: "Episode recall refused: source entries are unavailable or changed." }], details: {}, isError: true };
+      const originals = receipt.sourceEntryIds.map((id) =>
+        branch.find((entry) => entry.id === id)
+      );
+      if (
+        originals.some((entry, index) =>
+          !entry || !isPlainMessage(entry) ||
+          fingerprintEntry(entry) !== receipt.sourceFingerprints[index]
+        )
+      ) {
+        throw new Error(
+          "Episode recall refused: source entries are unavailable or changed.",
+        );
       }
       if (!params.sourceEntryId) {
-        const inventory = originals.map((entry) => ({ id: entry!.id, role: entry!.message!.role, bytes: Buffer.byteLength(JSON.stringify(entry!.message)) }));
-        return { content: [{ type: "text", text: JSON.stringify(inventory, null, 2) }], details: { sourceEntryIds: receipt.sourceEntryIds } };
+        const inventory = originals.map((entry) => ({
+          id: entry!.id,
+          role: entry!.message!.role,
+          bytes: Buffer.byteLength(JSON.stringify(entry!.message)),
+        }));
+        return {
+          content: [{ type: "text", text: JSON.stringify(inventory, null, 2) }],
+          details: { sourceEntryIds: receipt.sourceEntryIds },
+        };
       }
       const sourceIndex = receipt.sourceEntryIds.indexOf(params.sourceEntryId);
-      if (sourceIndex < 0) return { content: [{ type: "text", text: "Episode recall refused: sourceEntryId is outside the receipt." }], details: {}, isError: true };
+      if (sourceIndex < 0) {
+        throw new Error(
+          "Episode recall refused: sourceEntryId is outside the receipt.",
+        );
+      }
       const entry = originals[sourceIndex]!;
-      return { content: [{ type: "text", text: JSON.stringify({ id: entry.id, message: entry.message }, null, 2) }], details: { sourceEntryId: entry.id } };
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(
+            { id: entry.id, message: entry.message },
+            null,
+            2,
+          ),
+        }],
+        details: { sourceEntryId: entry.id },
+      };
     },
   });
 
+  // Public ExtensionAPI context handler typing does not expose this structural overlay.
   pi.on("context", (event, ctx): any => {
     const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
     const receipts = getReceipts(branch);
-    if (!activePathIsSupported(branch) || treeHasBranch(ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>) || receipts.length !== 1) return;
+    if (
+      !activePathIsSupported(branch) ||
+      treeHasBranch(
+        ctx.sessionManager.getTree() as Array<{ children?: unknown[] }>,
+      ) || receipts.length !== 1
+    ) return;
     const messageEntries = branch.filter(isPlainMessage);
-    const projected = projectEventMessages(messageEntries, event.messages as AgentMessage[], receipts[0]);
+    const projected = projectEventMessages(
+      messageEntries,
+      event.messages as AgentMessage[],
+      receipts[0],
+    );
     if (projected.applied) return { messages: projected.messages as any };
   });
 }

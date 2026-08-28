@@ -4,6 +4,12 @@
 
 **Provisional implementation finding (2026-08-28).** V0 is a working provider-facing overlay, not evidence of cost or task-quality improvement.
 
+### Capsule-model V2
+
+V2 keeps active-agent episode selection but moves capsule authorship to exactly one configured secondary `provider/model` (`PI_EPISODE_RETIREMENT_MODEL`, default `google/gemini-3.7-flash`) at a validated Pi reasoning level (`PI_EPISODE_RETIREMENT_REASONING_EFFORT`, default `medium`). It has no active-model fallback: configuration, model/auth, completion, or capsule-validation failure aborts before append. V2 receipts persist model metadata and nested usage; existing V1 receipts remain projectable and recallable.
+
+Final V2 automated evidence: `npm run precommit` passed TypeScript, 51 tests across 3 files (including 34 deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
+
 ## Name and contract
 
 **Episode retirement** is provisional: it conveys leaving the active working set while retaining recoverable source history, unlike Pi native compaction.
@@ -14,7 +20,8 @@ The contract is:
 - protect the current active episode;
 - keep JSONL append-only and lossless;
 - persist a structured **continuation capsule** plus exact source IDs and SHA-256 message fingerprints;
-- project the capsule into the first retained active user message only for the provider-facing view;
+- preserve the provider-input prefix before the selected suffix exactly; project the capsule only into the first retained active user message for the provider-facing view;
+- this causes a one-time suffix recache; it can avoid recurring cached-token processing cost and latency, but realized local-model speedup depends on server prefix/KV-cache retention;
 - fail open on ambiguity; and
 - recall by inventory, then one validated source entry at a time.
 
@@ -35,6 +42,10 @@ V0 rejects branches, native compaction/branch summaries, overlapping receipts, i
 `npm run precommit` passed: TypeScript typecheck, **15 tests**, and `npm audit` with zero vulnerabilities. The registered `context` handler is tested directly with realistic event messages; it projects only after exact alignment and otherwise leaves the event unchanged.
 
 ## Isolated live evidence
+
+### V2 synthetic smoke
+
+One isolated synthetic run verified mechanics: active `openai-codex/gpt-5.6-terra` retired exactly two completed episodes (four source messages) through capsule model `google/gemini-3.7-flash` at `medium`. The V2 receipt had matching JavaScript SHA-256 fingerprints, `capsule-v2`, and nested usage of 1,091 input / 336 output / 171 reasoning / 1,427 total tokens / `$0.00207825`. The follow-up returned `ALPHA-731`, `blue-route`, and `verify-checksum`. This verifies the V2 protocol mechanics, not general task quality or cost benefit.
 
 All artifacts are outside the repository:
 
