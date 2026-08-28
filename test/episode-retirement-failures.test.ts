@@ -133,8 +133,56 @@ describe("episode retirement failures", () => {
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: parent }, msg("a2", "assistant", "done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
-    expect(result.details.refused).toContainEqual({ count: 2, reason: "selection partially overlaps or gaps the parent range" });
+    expect(result.details).toMatchObject({
+      evaluatedCount: 3, acceptedCount: 2, refusedCount: 1,
+      relationFrontier: {
+        initial: null,
+        forward: { acceptedCount: 1, minCount: 1, maxCount: 1 },
+        recompose: { acceptedCount: 1, minCount: 3, maxCount: 3 },
+        deepen: null,
+      },
+      largestSafe: { count: 3, relation: "recompose" },
+    });
+    expect(result.details.refusalReasons).toEqual({
+      insufficientCompletedEpisodes: 0,
+      unsupportedCandidate: 0,
+      incompleteAssistantBoundary: 0,
+      unmatchedToolResult: 0,
+      openToolCalls: 0,
+      activeAlignment: 0,
+      parentUnavailable: 0,
+      partialOverlapOrGap: 1,
+      v4MissingAfterInterval: 0,
+      exactForwardRequired: 0,
+    });
+    expect(Object.values(result.details.refusalReasons as Record<string, number>).reduce((sum, count) => sum + count, 0)).toBe(result.details.refusedCount);
     expect(h.calls()).toBe(0);
+  });
+
+  it("inspect reports zero accepted counts with null frontiers and no largest safe candidate", async () => {
+    const h = harness();
+    h.branch[0].message!.content = [{ type: "image", data: "x" }] as any;
+    const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(result.details).toEqual({
+      evaluatedCount: 1, acceptedCount: 0, refusedCount: 1,
+      relationFrontier: { initial: null, forward: null, recompose: null, deepen: null },
+      largestSafe: null,
+      refusalReasons: {
+        insufficientCompletedEpisodes: 0,
+        unsupportedCandidate: 1,
+        incompleteAssistantBoundary: 0,
+        unmatchedToolResult: 0,
+        openToolCalls: 0,
+        activeAlignment: 0,
+        parentUnavailable: 0,
+        partialOverlapOrGap: 0,
+        v4MissingAfterInterval: 0,
+        exactForwardRequired: 0,
+      },
+    });
+    expect(Object.values(result.details.refusalReasons as Record<string, number>).reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(h.calls()).toBe(0);
+    expect(h.appended).toHaveLength(0);
   });
 
   it("a V1 parent refuses V4 when it has no completed after-parent interval", async () => {

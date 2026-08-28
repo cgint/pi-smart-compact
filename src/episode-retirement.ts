@@ -136,6 +136,34 @@ type SelectionReason =
   | "unmatched or out-of-order tool result"
   | "open tool calls"
   | "active user/source alignment";
+type PreflightReason = SelectionReason
+  | "parent range is unavailable"
+  | "selection partially overlaps or gaps the parent range"
+  | "V4 requires a completed after-parent interval"
+  | "repeated retirement requires an exact forward delta";
+type RefusalReasonKey =
+  | "insufficientCompletedEpisodes"
+  | "unsupportedCandidate"
+  | "incompleteAssistantBoundary"
+  | "unmatchedToolResult"
+  | "openToolCalls"
+  | "activeAlignment"
+  | "parentUnavailable"
+  | "partialOverlapOrGap"
+  | "v4MissingAfterInterval"
+  | "exactForwardRequired";
+const refusalReasonKey: Record<PreflightReason, RefusalReasonKey> = {
+  "insufficient completed episodes": "insufficientCompletedEpisodes",
+  "unsupported or nonstandard slot inside candidate": "unsupportedCandidate",
+  "candidate does not end in a completed assistant": "incompleteAssistantBoundary",
+  "unmatched or out-of-order tool result": "unmatchedToolResult",
+  "open tool calls": "openToolCalls",
+  "active user/source alignment": "activeAlignment",
+  "parent range is unavailable": "parentUnavailable",
+  "selection partially overlaps or gaps the parent range": "partialOverlapOrGap",
+  "V4 requires a completed after-parent interval": "v4MissingAfterInterval",
+  "repeated retirement requires an exact forward delta": "exactForwardRequired",
+};
 type Selection = {
   sourceEntryIds: string[];
   sourceFingerprints: string[];
@@ -391,7 +419,7 @@ type RetirementPreflight = {
   after: SessionLikeEntry[];
   parentSource: SessionLikeEntry[];
   emitsV4: boolean;
-} | { reason: string };
+} | { reason: PreflightReason };
 function preflightRetirement(
   entries: SessionLikeEntry[],
   parentEntry: ReceiptEntry | undefined,
@@ -692,11 +720,39 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       if (assessment.state === "malformed") throw new Error("Episode inspection refused: latest receipt chain is malformed or inactive.");
       const parentEntry = assessment.state === "valid" ? assessment.entry : undefined;
       const maxCount = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").length - 1;
-      const candidates: Array<Record<string, unknown>> = [];
-      const refused: Array<{ count: number; reason: string }> = [];
+      type Frontier = { acceptedCount: number; minCount: number; maxCount: number };
+      type Candidate = {
+        count: number; relation: RetirementRelation;
+        earlierAddedEpisodeCount: number; earlierAddedMessageCount: number;
+        laterAddedEpisodeCount: number; laterAddedMessageCount: number;
+        cumulativeEpisodeCount: number; cumulativeMessageCount: number;
+        cumulativeSourceBytes: number; startId: string; endId: string;
+      };
+      const relationFrontier: Record<RetirementRelation, Frontier | null> = {
+        initial: null, forward: null, recompose: null, deepen: null,
+      };
+      const refusalReasons: Record<RefusalReasonKey, number> = {
+        insufficientCompletedEpisodes: 0,
+        unsupportedCandidate: 0,
+        incompleteAssistantBoundary: 0,
+        unmatchedToolResult: 0,
+        openToolCalls: 0,
+        activeAlignment: 0,
+        parentUnavailable: 0,
+        partialOverlapOrGap: 0,
+        v4MissingAfterInterval: 0,
+        exactForwardRequired: 0,
+      };
+      let acceptedCount = 0;
+      let refusedCount = 0;
+      let largestSafe: Candidate | null = null;
       for (let count = 1; count <= maxCount; count++) {
         const preflight = preflightRetirement(contextEntries, parentEntry, count);
-        if ("reason" in preflight) { refused.push({ count, reason: preflight.reason }); continue; }
+        if ("reason" in preflight) {
+          refusedCount++;
+          refusalReasons[refusalReasonKey[preflight.reason]]++;
+          continue;
+        }
         const cumulativeIds = parentEntry && preflight.emitsV4
           ? [...preflight.before, ...preflight.parentSource, ...preflight.after].map((entry) => entry.id)
           : parentEntry ? [...parentEntry.data.sourceEntryIds, ...preflight.selection.sourceEntryIds]
@@ -704,9 +760,15 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
         const earlier = rawMetrics(contextEntries, preflight.before.map((entry) => entry.id));
         const later = rawMetrics(contextEntries, preflight.after.map((entry) => entry.id));
         const cumulative = rawMetrics(contextEntries, cumulativeIds);
-        candidates.push({ count, relation: preflight.relation, earlierAddedEpisodeCount: earlier.completedEpisodeCount, earlierAddedMessageCount: earlier.sourceMessageCount, laterAddedEpisodeCount: later.completedEpisodeCount, laterAddedMessageCount: later.sourceMessageCount, cumulativeEpisodeCount: cumulative.completedEpisodeCount, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, startId: cumulativeIds[0], endId: cumulativeIds.at(-1) });
+        const candidate: Candidate = { count, relation: preflight.relation, earlierAddedEpisodeCount: earlier.completedEpisodeCount, earlierAddedMessageCount: earlier.sourceMessageCount, laterAddedEpisodeCount: later.completedEpisodeCount, laterAddedMessageCount: later.sourceMessageCount, cumulativeEpisodeCount: cumulative.completedEpisodeCount, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, startId: cumulativeIds[0]!, endId: cumulativeIds.at(-1)! };
+        acceptedCount++;
+        largestSafe = candidate;
+        const frontier = relationFrontier[candidate.relation];
+        relationFrontier[candidate.relation] = frontier
+          ? { acceptedCount: frontier.acceptedCount + 1, minCount: frontier.minCount, maxCount: count }
+          : { acceptedCount: 1, minCount: count, maxCount: count };
       }
-      const details = { candidates, refused };
+      const details = { evaluatedCount: maxCount, acceptedCount, refusedCount, refusalReasons, relationFrontier, largestSafe };
       return { content: [{ type: "text", text: JSON.stringify(details) }], details };
     },
   });

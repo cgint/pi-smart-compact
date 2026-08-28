@@ -6,13 +6,15 @@
 
 ### V3 forward retirement + V4 corrective deepening
 
-V3 extends a valid V1/V2 first retirement with an append-only active receipt chain. Each later receipt stores the exact parent receipt/capsule SHA-256 hashes, generation, raw-delta entries, and a cumulative contiguous raw range. Provider input separates the prior structured capsule from the new raw delta, so it neither nests capsule text nor reconstructs omitted source facts. The latest valid active-chain receipt alone projects and recalls the full cumulative originals. Missing, malformed, tampered, inactive, or native-compacted chains fail closed; V1/V2 one-shot projection and recall remain compatible. Cumulative metrics and V3 delta metrics are persisted and rendered. The cumulative boundary remains stable, but every new capsule causes one suffix recache; this is not a general performance-benefit claim.
+V3 extends a valid V1/V2 first retirement with an append-only active receipt chain. Each later receipt stores the exact parent receipt/capsule SHA-256 hashes, generation, raw-delta entries, and a cumulative contiguous raw range. Provider input separates the prior structured capsule from the new raw delta, so it neither nests capsule text nor reconstructs omitted source facts. The latest valid active-chain receipt alone projects and recalls the full cumulative originals. Missing, malformed, tampered, inactive, or native-compacted chains fail closed; V1/V2 one-shot projection and recall remain compatible. Cumulative metrics and V3 delta metrics are persisted and rendered. V3's exact-forward boundary remains stable; V4 corrective deepening can move the boundary backward. Every new capsule causes one suffix recache; this is not a general performance-benefit claim.
 
 ### Capsule-model V2
 
 V2 keeps active-agent episode selection but moves capsule authorship to exactly one configured secondary `provider/model` (`PI_EPISODE_RETIREMENT_MODEL`, default `google/gemini-3.7-flash`) at a validated Pi reasoning level (`PI_EPISODE_RETIREMENT_REASONING_EFFORT`, default `medium`). It has no active-model fallback: configuration, model/auth, completion, or capsule-validation failure aborts before append. V2 receipts persist model metadata and nested usage; existing V1 receipts remain projectable and recallable.
 
-Current automated evidence: `npm run precommit` passed TypeScript, 160 tests across 4 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. Egress is redacted by default and originals are never changed.
+**Historical-stage automated evidence (2026-08-28):** `npm run precommit` passed TypeScript, 160 tests across 4 files (including deterministic failure cases), and audit with 0 vulnerabilities; those cases cover zero-append failures, prefix stability, and V1 compatibility. This measurement was not rerun for that stage.
+
+**Current verification (bounded inspect review):** `npm run precommit` passed TypeScript, **162 tests across 4 files**, and `npm audit --audit-level=moderate` with 0 vulnerabilities. Egress is redacted by default and originals are never changed.
 
 ## Name and contract
 
@@ -26,12 +28,14 @@ The contract is:
 - persist a structured **continuation capsule** plus exact source IDs and SHA-256 message fingerprints;
 - preserve the provider-input prefix before the selected suffix exactly; project the capsule only into the first retained active user message for the provider-facing view;
 - this causes a one-time suffix recache; it can avoid recurring cached-token processing cost and latency, but realized local-model speedup depends on server prefix/KV-cache retention;
-- fail open on ambiguity; and
+- fail closed on ambiguity for retirement and recall; leave the provider projection unchanged when its parity check is ambiguous; and
 - recall by inventory, then one validated source entry at a time.
+
+`inspect_episode_retirement` evaluates every count from 1 through the mechanical maximum, with no selection cap. It returns only fixed, source-free data: evaluated/accepted/refused totals; fixed canonical numeric refusal-reason counts; per-relation accepted-count/min-count/max-count frontiers for `initial`, `forward`, `recompose`, and `deepen`; and `largestSafe` with the established mechanical candidate fields, or `null`. It does no model lookup, authentication, streaming, or append work.
 
 ## Implementation scope
 
-Exactly three code paths changed:
+**Historical-stage implementation evidence (2026-08-28):** Exactly three code paths changed:
 
 - `src/episode-retirement.ts` — selection, receipt, strict event projection, and bounded recall;
 - `test/episode-retirement.test.ts` — multi-tool, string/text active-user, mismatch, resume, registration/hook, and recall tests;
@@ -39,13 +43,13 @@ Exactly three code paths changed:
 
 Feature flag: `PI_EPISODE_RETIREMENT_ENABLED=true`. It is off by default.
 
-Resolved-context retirement uses public `ReadonlySessionManager.buildContextEntries()` and `buildSessionContext()`: context-producing raw entries (`message`, `custom_message`, `compaction`, `branch_summary`) are paired in order with resolved provider messages. It preserves an opaque exact prefix and validates only the candidate source-to-active interval: candidates must contain supported raw standard messages and balanced tool calls. It hard-refuses before stream/append on producer/message count mismatch or raw standard-message fingerprint mismatch. Discuss metadata, custom-message, compaction, branch-summary, old-image prefixes, and inactive branches are allowed; those shapes remain disallowed inside the candidate. Existing receipts refuse with the reason-specific repeated-retirement-unsupported error; recall still verifies receipt sources.
+Resolved-context retirement uses public `ReadonlySessionManager.buildContextEntries()` and `buildSessionContext()`: context-producing raw entries (`message`, `custom_message`, `compaction`, `branch_summary`) are paired in order with resolved provider messages. It preserves an opaque exact prefix and validates only the candidate source-to-active interval: candidates must contain supported raw standard messages and balanced tool calls. It hard-refuses before stream/append on producer/message count mismatch or raw standard-message fingerprint mismatch. Discuss metadata, custom-message, compaction, branch-summary, old-image prefixes, and inactive branches are allowed; those shapes remain disallowed inside the candidate. **Historical-stage behavior (2026-08-28):** Existing receipts refused with the reason-specific `repeated-retirement-unsupported` error; recall still verified receipt sources.
 
-Scoped census: **1,605 session files inspected; 791 (49.3%)** matched the former pre-selection rejection shape at `/Users/cgint/.pi/profiles/partner/agent/sessions`. The method used the last tree entry as active leaf, a `parentId` walk, and the global branch rule. Overlapping categories: 706 active custom metadata, 570 active `custom_message`, 232 active compaction, 12 active branch summary, and 101 global branch. The homelab cause was the old global/raw-shape rejection, not a raw-entry/resolved-message disparity. This is not a quality claim. Repeated retirement remains the next slice.
+**Historical-stage census and roadmap (2026-08-28):** **1,605 session files inspected; 791 (49.3%)** matched the former pre-selection rejection shape at `/Users/cgint/.pi/profiles/partner/agent/sessions`. The method used the last tree entry as active leaf, a `parentId` walk, and the global branch rule. Overlapping categories: 706 active custom metadata, 570 active `custom_message`, 232 active compaction, 12 active branch summary, and 101 global branch. The homelab cause was the old global/raw-shape rejection, not a raw-entry/resolved-message disparity. This is not a quality claim. At that stage, repeated retirement remained the next slice.
 
 ## Automated evidence
 
-`npm run precommit` passed: TypeScript typecheck, **15 tests**, and `npm audit` with zero vulnerabilities. The registered `context` handler is tested directly with realistic event messages; it projects only after exact alignment and otherwise leaves the event unchanged.
+**Historical-stage automated evidence (2026-08-28):** `npm run precommit` passed: TypeScript typecheck, **15 tests**, and `npm audit` with zero vulnerabilities. This measurement was not rerun for that stage. The registered `context` handler was tested directly with realistic event messages; it projected only after exact alignment and otherwise left the event unchanged.
 
 ## Isolated live evidence
 

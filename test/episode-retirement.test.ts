@@ -123,15 +123,16 @@ describe("episode retirement", () => {
     manager.appendMessage(user("ignored", "D active").message as any);
     const before = { appended: h.appended.length, streams: h.streams(), finds: h.finds(), auths: h.auths() };
     const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
-    const candidates = result.details.candidates;
-    const raw = manager.getEntries().filter((entry: any) => entry.type === "message");
-    const bytes = (candidate: any) => Buffer.byteLength(JSON.stringify(raw.slice(raw.findIndex((entry: any) => entry.id === candidate.startId), raw.findIndex((entry: any) => entry.id === candidate.endId) + 1).map((entry: any) => entry.message)));
-    expect(candidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ count: 1, relation: "forward", earlierAddedEpisodeCount: 0, earlierAddedMessageCount: 0, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 2, cumulativeMessageCount: 4 }),
-      expect.objectContaining({ count: 2, relation: "recompose", earlierAddedEpisodeCount: 0, earlierAddedMessageCount: 0, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 2, cumulativeMessageCount: 4 }),
-      expect.objectContaining({ count: 3, relation: "deepen", earlierAddedEpisodeCount: 1, earlierAddedMessageCount: 2, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 3, cumulativeMessageCount: 6 }),
-    ]));
-    for (const candidate of candidates) expect(candidate.cumulativeSourceBytes).toBe(bytes(candidate));
+    expect(result.details).toMatchObject({
+      evaluatedCount: 3, acceptedCount: 3, refusedCount: 0,
+      relationFrontier: {
+        initial: null,
+        forward: { acceptedCount: 1, minCount: 1, maxCount: 1 },
+        recompose: { acceptedCount: 1, minCount: 2, maxCount: 2 },
+        deepen: { acceptedCount: 1, minCount: 3, maxCount: 3 },
+      },
+      largestSafe: { count: 3, relation: "deepen", earlierAddedEpisodeCount: 1, earlierAddedMessageCount: 2, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 3, cumulativeMessageCount: 6 },
+    });
     expect({ appended: h.appended.length, streams: h.streams(), finds: h.finds(), auths: h.auths() }).toEqual(before);
     expect(JSON.stringify(result)).not.toContain("A request");
     expect(JSON.stringify(result)).not.toContain("B request");
@@ -802,6 +803,72 @@ describe("episode retirement", () => {
   });
 
 
+  it("summarizes every safe count from a large valid prior receipt within the fixed inspect budget", async () => {
+    const manager = SessionManager.inMemory();
+    for (const [id, text] of [["a", "earlier"], ["b", "parent"]]) {
+      manager.appendMessage(user("ignored", `SOURCE_SENTINEL ${id} request`).message as any);
+      manager.appendMessage(assistant("ignored", `SOURCE_SENTINEL ${id} done`).message as any);
+    }
+    manager.appendMessage(user("ignored", "SOURCE_SENTINEL first after-parent active").message as any);
+    const h = extensionHarness(manager);
+    await h.retire.execute("parent", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, h.ctx);
+    manager.appendMessage(assistant("ignored", "SOURCE_SENTINEL first after-parent done").message as any);
+    for (let count = 1; count < 100; count++) {
+      manager.appendMessage(user("ignored", `SOURCE_SENTINEL after-parent ${count} request`).message as any);
+      manager.appendMessage(assistant("ignored", `SOURCE_SENTINEL after-parent ${count} done`).message as any);
+    }
+    manager.appendMessage(user("ignored", "SOURCE_SENTINEL final active").message as any);
+    const before = { finds: h.finds(), auths: h.auths(), streams: h.streams(), appends: h.appended.length };
+    const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    const text = result.content[0].text;
+    const detailsText = JSON.stringify(result.details);
+    const containsArray = (value: unknown): boolean => Array.isArray(value) ||
+      typeof value === "object" && value !== null && Object.values(value).some(containsArray);
+
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(2_048);
+    expect(Buffer.byteLength(detailsText)).toBeLessThanOrEqual(2_048);
+    expect(JSON.parse(text)).toEqual(result.details);
+    expect(containsArray(result.details)).toBe(false);
+    expect(text).not.toContain("SOURCE_SENTINEL");
+    expect(detailsText).not.toContain("SOURCE_SENTINEL");
+    expect(result.details).toMatchObject({
+      evaluatedCount: 102,
+      acceptedCount: 3,
+      refusedCount: 99,
+      relationFrontier: {
+        initial: null,
+        forward: { acceptedCount: 1, minCount: 100, maxCount: 100 },
+        recompose: { acceptedCount: 1, minCount: 101, maxCount: 101 },
+        deepen: { acceptedCount: 1, minCount: 102, maxCount: 102 },
+      },
+      largestSafe: {
+        count: 102, relation: "deepen",
+        earlierAddedEpisodeCount: 1, earlierAddedMessageCount: 2,
+        laterAddedEpisodeCount: 100, laterAddedMessageCount: 200,
+        cumulativeEpisodeCount: 102, cumulativeMessageCount: 204,
+        startId: expect.stringMatching(/^.{1,128}$/),
+        endId: expect.stringMatching(/^.{1,128}$/),
+      },
+    });
+    expect(result.details.largestSafe.cumulativeSourceBytes).toBeGreaterThan(0);
+    expect(result.details.refusalReasons).toEqual({
+      insufficientCompletedEpisodes: 0,
+      unsupportedCandidate: 0,
+      incompleteAssistantBoundary: 0,
+      unmatchedToolResult: 0,
+      openToolCalls: 0,
+      activeAlignment: 0,
+      parentUnavailable: 0,
+      partialOverlapOrGap: 99,
+      v4MissingAfterInterval: 0,
+      exactForwardRequired: 0,
+    });
+    const refusalTotal = Object.values(result.details.refusalReasons as Record<string, number>).reduce((sum, count) => sum + count, 0);
+    expect(refusalTotal).toBe(result.details.refusedCount);
+    expect(result.details.acceptedCount + refusalTotal).toBe(result.details.evaluatedCount);
+    expect({ finds: h.finds(), auths: h.auths(), streams: h.streams(), appends: h.appended.length }).toEqual(before);
+  });
+
   it("inspects initial candidates without model or persistence work", async () => {
     const manager = SessionManager.inMemory();
     manager.appendMessage(user("ignored", "settled request").message as any);
@@ -809,10 +876,11 @@ describe("episode retirement", () => {
     manager.appendMessage(user("ignored", "active request").message as any);
     const harness = extensionHarness(manager);
     const result = await harness.inspect.execute("inspect", {}, undefined, undefined, harness.ctx);
-    const candidates = (result.details as { candidates: Array<{ relation: string; count: number; startId: string; endId: string }> }).candidates;
-    expect(candidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ relation: "initial", count: 1, startId: expect.any(String), endId: expect.any(String) }),
-    ]));
+    expect(result.details).toMatchObject({
+      evaluatedCount: 1, acceptedCount: 1, refusedCount: 0,
+      relationFrontier: { initial: { acceptedCount: 1, minCount: 1, maxCount: 1 }, forward: null, recompose: null, deepen: null },
+      largestSafe: { relation: "initial", count: 1, startId: expect.any(String), endId: expect.any(String) },
+    });
     expect(harness.finds()).toBe(0);
     expect(harness.auths()).toBe(0);
     expect(harness.streams()).toBe(0);
