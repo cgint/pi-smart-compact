@@ -71,7 +71,9 @@ export default function register(pi: ExtensionAPI): void {
     // and can reject providers that work fine at runtime.
     if (auth.ok) {
       apiKey = auth.apiKey;
-      authHeaders = auth.headers;
+      authHeaders = Object.fromEntries(
+        Object.entries(auth.headers ?? {}).filter((entry): entry is [string, string] => entry[1] !== null),
+      );
     } else {
       const rawModel = ctx.modelRegistry.find(summaryModel.provider, summaryModel.id);
       const rawApiKey = (rawModel as unknown as { apiKey?: string })?.apiKey;
