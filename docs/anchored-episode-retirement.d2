@@ -1,0 +1,21 @@
+direction: down
+
+agent: Agent { shape: person }
+history: "Resolved history through active user root" { shape: cylinder }
+inspect: "inspect_episode_retirement({ cursor? })\ncursorless: all-count evaluation + new witness grant\ncursor: page stored grant" { style.fill: "#fef3c7" }
+page: "<=2048 B provider envelope\n<=2048 B details envelope\ncomplete newest-first candidates\nsourceMessageBytes" { style.fill: "#fef3c7" }
+retire: "retire_episodes({\n fromEpisodeInclusive,\n inspectionWitness, continuationGoal,\n pinnedWorkingState\n})" { style.fill: "#e0f2fe" }
+fresh: "Validate current witness + active-root digest\nexact anchor/preflight binding\nconsume only after receipt append" { style.fill: "#dcfce7" }
+model: "Secondary model\ndefault-redacted pin guidance\ncomplementary five-key capsule" { style.fill: "#dcfce7" }
+receipt: "Strict V5: mode + original pin\nlatest-only pin projection\nV1-V4 readers unchanged" { shape: document }
+
+agent -> inspect: "inspect first; page as needed"
+inspect -> history: "canonical snapshot"
+history -> inspect: "accepted bindings + refusals"
+inspect -> page
+page -> retire: "ep-N = Nth newest completed episode"
+agent -> retire: "independently author pin"
+retire -> fresh
+fresh -> model: "only if valid"
+model -> receipt
+fresh -> receipt: "append then consume"

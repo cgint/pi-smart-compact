@@ -43,20 +43,33 @@ describe("/retire prompt template", () => {
     );
     for (const phrase of [
       "assess whether",
-      "independently choose",
-      "largest safe contiguous",
-      "fully settled",
+      "always call `inspect_episode_retirement` first",
+      "page as needed",
+      "independently decides",
+      "oldest included completed episode",
       "continuation goal",
-      "call retire_episodes",
-      "active or unresolved work verbatim",
+      "retire_episodes",
+      "active or unresolved work",
       "safe or worthwhile",
       "what should remain salient or happen next",
-      "not instructions about what to retire",
-      "inspect_episode_retirement",
-      "including those already represented by the capsule",
+      "never a boundary, goal, or count",
+      "inspectionwitness",
+      "pinnedworkingstate",
     ]) {
       expect(text.toLowerCase()).toContain(phrase);
     }
     expect(text).toContain("${ARGUMENTS:-");
+  });
+
+  it("RED: requires inspect paging and independently authored pinned working state", async () => {
+    const text = await readFile(new URL("../prompts/retire.md", import.meta.url), "utf8");
+    for (const phrase of [
+      "inspect_episode_retirement",
+      "page as needed",
+      "pinnedWorkingState",
+      "independently author",
+      "fromEpisodeInclusive",
+      "inspectionWitness",
+    ]) expect(text).toContain(phrase);
   });
 });

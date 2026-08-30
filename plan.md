@@ -53,6 +53,15 @@ Combine collected findings into a compaction prompt. Evaluate against NORTH-STAR
 - Iterate: refine the prompt based on real usage, not synthetic benchmarks.
 - **Output:** field notes, prompt revisions, and a verdict on whether it's actually better.
 
+## Phase 4: Anchored Usability & Agent Ergonomics (automated implementation verified; live user verification pending)
+- **Closed contract:** Inspect evaluates all counts and pages newest-first witness-scoped candidates. `fromEpisodeInclusive` names the oldest included completed episode in the existing newest suffix; `ep-2` selects ep-2 plus ep-1, and unsafe IDs may skip. Complete candidate records are dual-envelope packed at <=2048 UTF-8 bytes; `sourceMessageBytes` is non-pretty JSON source size. Active-root digest freshness excludes later active traffic; successful append alone consumes the one in-memory grant.
+- **Pinned/V5 contract:** `pinnedWorkingState` remains caller-authored, <=2000 characters, unchanged and structurally projected once. Every new receipt is strict V5 (`initial|forward|recompose|deepen`) with an original pin; V1–V4 validators/readers remain unchanged and projection is latest-only.
+- **Artifacts:**
+  - OpenSpec: [`openspec/changes/anchored-episode-retirement/`](openspec/changes/anchored-episode-retirement/)
+  - Architecture RFC: [`docs/anchored-episode-retirement.md`](docs/anchored-episode-retirement.md)
+  - Process Diagram: [`docs/anchored-episode-retirement.svg`](docs/anchored-episode-retirement.svg)
+- **Automated evidence (C3):** Prompt, authority, strict V5/legacy-reader, pin-projection, pagination, and full-suite checks are verified. The remaining task is live user verification of exact pin projection, inspect/page/anchor flow, and V1–V4 compatibility; it is intentionally not represented as automated completion.
+
 ## Pre-flight check
 - Verify all relative paths resolve from repo root before starting.
 

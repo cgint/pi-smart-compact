@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Type } from "@sinclair/typebox";
 import {
   buildSessionContext,
@@ -120,12 +120,20 @@ export type EpisodeRetirementReceiptV4 = ReceiptBase & {
     priorCapsuleTextBytes: number; newCapsuleTextBytes: number;
   };
 };
-export type EpisodeRetirementReceipt =
-  | EpisodeRetirementReceiptV1
-  | EpisodeRetirementReceiptV2
-  | EpisodeRetirementReceiptV3
-  | EpisodeRetirementReceiptV4;
+type V5Base = { version: 5; pinnedWorkingState: string; promptVersion: "capsule-v5" };
+export type EpisodeRetirementReceiptV5Initial = Omit<EpisodeRetirementReceiptV2, "version" | "promptVersion" | "replacementMetrics"> & V5Base & {
+  mode: "initial"; replacementMetrics: NonNullable<ReceiptBase["replacementMetrics"]>;
+};
+export type EpisodeRetirementReceiptV5Forward = Omit<EpisodeRetirementReceiptV3, "version" | "promptVersion"> & V5Base & { mode: "forward" };
+export type EpisodeRetirementReceiptV5Corrective = Omit<EpisodeRetirementReceiptV4, "version" | "promptVersion"> & V5Base & {
+  mode: "recompose" | "deepen";
+};
+export type EpisodeRetirementReceiptV5 = EpisodeRetirementReceiptV5Initial | EpisodeRetirementReceiptV5Forward | EpisodeRetirementReceiptV5Corrective;
+export type EpisodeRetirementReceipt = EpisodeRetirementReceiptV1 | EpisodeRetirementReceiptV2 | EpisodeRetirementReceiptV3 | EpisodeRetirementReceiptV4 | EpisodeRetirementReceiptV5;
 type AnyReceipt = EpisodeRetirementReceipt;
+type ForwardReceipt = EpisodeRetirementReceiptV3 | EpisodeRetirementReceiptV5Forward;
+type CorrectiveReceipt = EpisodeRetirementReceiptV4 | EpisodeRetirementReceiptV5Corrective;
+type GenerationalReceipt = ForwardReceipt | CorrectiveReceipt;
 type ReceiptEntry = SessionLikeEntry & { data: AnyReceipt };
 const hashJson = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -298,6 +306,10 @@ function validatedRange(
   return { start, activeIndex };
 }
 
+function continuationText(receipt: AnyReceipt): string {
+  const capsule = capsuleText(receipt.capsule, receipt.sourceEntryIds);
+  return receipt.version === 5 ? "[PINNED WORKING STATE]\n" + receipt.pinnedWorkingState + "\n[/PINNED STATE]\n\n" + capsule : capsule;
+}
 function prependCapsule(message: AgentMessage, text: string): AgentMessage {
   if (typeof message.content === "string") {
     return { ...message, content: text + "\n\n" + message.content };
@@ -317,7 +329,7 @@ export function applyEpisodeRetirement(
 ): Projection {
   const range = validatedRange(entries, receipt);
   if ("applied" in range) return range;
-  const capsule = capsuleText(receipt.capsule, receipt.sourceEntryIds);
+  const capsule = continuationText(receipt);
   const messages = entries.map((entry) => entry.message!);
   messages.splice(range.start, range.activeIndex - range.start);
   messages[range.start] = prependCapsule(messages[range.start], capsule);
@@ -341,10 +353,7 @@ export function projectEventMessages(
   if ("applied" in range) return range;
   const messages = [...eventMessages];
   messages.splice(range.start, range.activeIndex - range.start);
-  messages[range.start] = prependCapsule(
-    messages[range.start],
-    capsuleText(receipt.capsule, receipt.sourceEntryIds),
-  );
+  messages[range.start] = prependCapsule(messages[range.start], continuationText(receipt));
   return { applied: true, messages };
 }
 
@@ -454,6 +463,18 @@ function preflightRetirement(
   };
 }
 type ReceiptAssessment = { state: "none" | "malformed" | "compacted" } | { state: "valid"; entry: ReceiptEntry };
+function isForwardReceipt(receipt: AnyReceipt): receipt is ForwardReceipt {
+  return receipt.version === 3 || receipt.version === 5 && receipt.mode === "forward";
+}
+function isCorrectiveReceipt(receipt: AnyReceipt): receipt is CorrectiveReceipt {
+  return receipt.version === 4 || receipt.version === 5 && (receipt.mode === "recompose" || receipt.mode === "deepen");
+}
+function isGenerationalReceipt(receipt: AnyReceipt): receipt is GenerationalReceipt {
+  return isForwardReceipt(receipt) || isCorrectiveReceipt(receipt);
+}
+function nextGeneration(parent: AnyReceipt): number {
+  return isGenerationalReceipt(parent) ? parent.generation + 1 : 2;
+}
 function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: SessionLikeEntry[]): ReceiptAssessment {
   const receiptSlots = branch.filter((entry) => entry.type === "custom" && entry.customType === RECEIPT_TYPE);
   if (receiptSlots.length === 0) return { state: "none" };
@@ -463,13 +484,13 @@ function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: Session
   if (branch.slice(branch.findIndex((entry) => entry.id === latest.id) + 1).some((entry) => entry.type === "compaction")) return { state: "compacted" };
   const validate = (entry: ReceiptEntry): boolean => {
     if (!receiptRangeIsValid(contextEntries, entry.data)) return false;
-    if (entry.data.version !== 3 && entry.data.version !== 4) return true;
+    if (!isGenerationalReceipt(entry.data)) return true;
     const receipt = entry.data;
     const parent = receipts.find((candidate) => candidate.id === receipt.parentReceiptEntryId);
     if (!parent || parent !== receipts[receipts.indexOf(entry) - 1] || !validate(parent)) return false;
-    const expectedGeneration = parent.data.version === 3 || parent.data.version === 4 ? parent.data.generation + 1 : 2;
+    const expectedGeneration = nextGeneration(parent.data);
     const cumulative = rawMetrics(contextEntries, receipt.sourceEntryIds);
-    if (receipt.version === 4) {
+    if (isCorrectiveReceipt(receipt)) {
       const parentRange = validatedRange(contextEntries, parent.data);
       if ("applied" in parentRange) return false;
       const start = contextEntries.findIndex((item) => item.id === receipt.sourceEntryIds[0]);
@@ -481,7 +502,7 @@ function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: Session
       const later = rawMetrics(contextEntries, after.map((item) => item.id));
       const expectedReplacement = { ...cumulative, capsuleTextBytes: Buffer.byteLength(capsuleText(receipt.capsule, receipt.sourceEntryIds)) };
       const expectedComposition = { earlierEpisodeCount: earlier.completedEpisodeCount, earlierMessageCount: earlier.sourceMessageCount, earlierSourceBytes: earlier.sourceMessageBytes, laterEpisodeCount: later.completedEpisodeCount, laterMessageCount: later.sourceMessageCount, laterSourceBytes: later.sourceMessageBytes, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parent.data.capsule, parent.data.sourceEntryIds)), newCapsuleTextBytes: expectedReplacement.capsuleTextBytes };
-      return receipt.generation === expectedGeneration && JSON.stringify(receipt.sourceEntryIds) === JSON.stringify(expectedIds) &&
+      return (receipt.version !== 5 || (before.length === 0 ? receipt.mode === "recompose" : receipt.mode === "deepen")) && receipt.generation === expectedGeneration && JSON.stringify(receipt.sourceEntryIds) === JSON.stringify(expectedIds) &&
         JSON.stringify(receipt.replacementMetrics) === JSON.stringify(expectedReplacement) && JSON.stringify(receipt.compositionMetrics) === JSON.stringify(expectedComposition) &&
         receipt.parentReceiptFingerprint === hashJson(parent.data) && receipt.priorCapsuleFingerprint === hashJson(parent.data.capsule) &&
         JSON.stringify(receipt.newlyIncorporatedBeforeParentEntries) === JSON.stringify(before.map((item) => ({ id: item.id, fingerprint: fingerprintEntry(item) }))) &&
@@ -500,15 +521,16 @@ function assessLatestReceipt(branch: SessionLikeEntry[], contextEntries: Session
       priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parent.data.capsule, parent.data.sourceEntryIds)),
       newCapsuleTextBytes: expectedReplacement.capsuleTextBytes,
     };
+    if (!isForwardReceipt(receipt)) return false;
     return receipt.generation === expectedGeneration &&
       JSON.stringify(receipt.replacementMetrics) === JSON.stringify(expectedReplacement) &&
       JSON.stringify(receipt.deltaMetrics) === JSON.stringify(expectedDelta) &&
       receipt.parentReceiptFingerprint === hashJson(parent.data) &&
       receipt.priorCapsuleFingerprint === hashJson(parent.data.capsule) &&
       receipt.sourceEntryIds.length === parent.data.sourceEntryIds.length + receipt.newlyCompletedEpisodeEntries.length &&
-      receipt.sourceEntryIds.slice(0, parent.data.sourceEntryIds.length).every((id, i) => id === parent.data.sourceEntryIds[i]) &&
-      receipt.sourceFingerprints.slice(0, parent.data.sourceFingerprints.length).every((id, i) => id === parent.data.sourceFingerprints[i]) &&
-      receipt.newlyCompletedEpisodeEntries.every((item, i) =>
+      receipt.sourceEntryIds.slice(0, parent.data.sourceEntryIds.length).every((id: string, i: number) => id === parent.data.sourceEntryIds[i]) &&
+      receipt.sourceFingerprints.slice(0, parent.data.sourceFingerprints.length).every((id: string, i: number) => id === parent.data.sourceFingerprints[i]) &&
+      receipt.newlyCompletedEpisodeEntries.every((item: any, i: number) =>
         item.id === receipt.sourceEntryIds[parent.data.sourceEntryIds.length + i] &&
         item.fingerprint === receipt.sourceFingerprints[parent.data.sourceFingerprints.length + i]);
   };
@@ -529,7 +551,7 @@ function hasReplacementMetrics(value: unknown): boolean {
 }
 function isReceipt(value: unknown): value is AnyReceipt {
   if (
-    !isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
+    !isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5) ||
     value.kind !== RECEIPT_TYPE ||
     !Array.isArray(value.sourceEntryIds) ||
     !value.sourceEntryIds.every((id) => typeof id === "string") ||
@@ -554,6 +576,22 @@ function isReceipt(value: unknown): value is AnyReceipt {
   const exactEntries = (entries: unknown, nonempty: boolean) => Array.isArray(entries) && (!nonempty || entries.length > 0) &&
     new Set(entries.map((item) => isRecord(item) ? item.id : "")).size === entries.length &&
     entries.every((item) => isRecord(item) && exactKeys(item, ["id", "fingerprint"]) && typeof item.id === "string" && item.id.length > 0 && /^[a-f0-9]{64}$/.test(item.fingerprint as string));
+  if (value.version === 5) {
+    const pin = typeof value.pinnedWorkingState === "string" && value.pinnedWorkingState.length <= 2_000 && value.pinnedWorkingState.trim().length > 0;
+    const initial = ["version", "kind", "sourceEntryIds", "sourceFingerprints", "activeUserEntryId", "capsule", "replacementMetrics", "provider", "model", "reasoningEffort", "promptVersion", "usage", "mode", "pinnedWorkingState"];
+    const forward = [...initial, "generation", "parentReceiptEntryId", "parentReceiptFingerprint", "priorCapsuleFingerprint", "newlyCompletedEpisodeEntries", "deltaMetrics"];
+    const corrective = [...initial, "generation", "parentReceiptEntryId", "parentReceiptFingerprint", "priorCapsuleFingerprint", "newlyIncorporatedBeforeParentEntries", "newlyCompletedAfterParentEntries", "compositionMetrics"];
+    if (!providerFields || value.promptVersion !== "capsule-v5" || !pin || !hasReplacementMetrics(value.replacementMetrics)) return false;
+    const positive = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number > 0;
+    const nonnegative = (number: unknown) => typeof number === "number" && Number.isSafeInteger(number) && number >= 0;
+    const deltaKeys = ["newlyCompletedEpisodeCount", "newlyCompletedMessageCount", "newlyCompletedSourceBytes", "cumulativeMessageCount", "cumulativeSourceBytes", "priorCapsuleTextBytes", "newCapsuleTextBytes"];
+    const compositionKeys = ["earlierEpisodeCount", "earlierMessageCount", "earlierSourceBytes", "laterEpisodeCount", "laterMessageCount", "laterSourceBytes", "cumulativeMessageCount", "cumulativeSourceBytes", "priorCapsuleTextBytes", "newCapsuleTextBytes"];
+    const parentFields = typeof value.generation === "number" && Number.isInteger(value.generation) && value.generation >= 2 && typeof value.parentReceiptEntryId === "string" && value.parentReceiptEntryId.length > 0 && typeof value.parentReceiptFingerprint === "string" && /^[a-f0-9]{64}$/.test(value.parentReceiptFingerprint) && typeof value.priorCapsuleFingerprint === "string" && /^[a-f0-9]{64}$/.test(value.priorCapsuleFingerprint);
+    if (value.mode === "initial") return exactKeys(value, initial);
+    if (value.mode === "forward") { const delta = value.deltaMetrics; return exactKeys(value, forward) && parentFields && exactEntries(value.newlyCompletedEpisodeEntries, true) && isRecord(delta) && exactKeys(delta, deltaKeys) && positive(delta.newlyCompletedEpisodeCount) && positive(delta.newlyCompletedMessageCount) && nonnegative(delta.newlyCompletedSourceBytes) && positive(delta.cumulativeMessageCount) && nonnegative(delta.cumulativeSourceBytes) && nonnegative(delta.priorCapsuleTextBytes) && nonnegative(delta.newCapsuleTextBytes); }
+    if (value.mode === "recompose" || value.mode === "deepen") { const composition = value.compositionMetrics; return exactKeys(value, corrective) && parentFields && exactEntries(value.newlyIncorporatedBeforeParentEntries, false) && exactEntries(value.newlyCompletedAfterParentEntries, true) && isRecord(composition) && exactKeys(composition, compositionKeys) && compositionKeys.every((key) => nonnegative(composition[key])); }
+    return false;
+  }
   if (value.version === 4) {
     const composition = value.compositionMetrics;
     const compositionKeys = ["earlierEpisodeCount", "earlierMessageCount", "earlierSourceBytes", "laterEpisodeCount", "laterMessageCount", "laterSourceBytes", "cumulativeMessageCount", "cumulativeSourceBytes", "priorCapsuleTextBytes", "newCapsuleTextBytes"];
@@ -665,6 +703,7 @@ function capsuleRequest(
   selected: SessionLikeEntry[],
   active: AgentMessage,
   continuationGoal: string,
+  pinnedWorkingState: string,
   priorCapsule?: ContinuationCapsule,
   before: SessionLikeEntry[] = [],
   after: SessionLikeEntry[] = selected,
@@ -688,30 +727,133 @@ function capsuleRequest(
       continuationGoal,
     }),
   );
-  return "Return JSON only with exactly objective, findings, decisions, unresolved, nextStep; no extras. objective/nextStep non-empty; fields <= " +
+  return "[PINNED WORKING STATE GUIDANCE — REDACTED]\n" + redact(pinnedWorkingState) + "\n[/PINNED WORKING STATE GUIDANCE]\n" +
+    "Return JSON only with exactly objective, findings, decisions, unresolved, nextStep; no extras. Author complementary, non-duplicative five-key state; no pinned field. objective/nextStep non-empty; fields <= " +
     CAPSULE_MAX_FIELD_CHARS + ", items <= " + CAPSULE_MAX_ITEM_CHARS +
     ", arrays <= " + CAPSULE_MAX_ITEMS + ", JSON <= " + CAPSULE_MAX_JSON_CHARS +
-    ". Retain working state only; do not copy world/source knowledge.\n" +
-    payload;
+    ". Retain working state only; do not copy world/source knowledge.\n" + payload;
 }
+type InspectCandidate = {
+  id: string;
+  timestamp: string;
+  userPrompt: string;
+  retiresEpisodes: number;
+  sourceMessageBytes: number;
+};
+type InspectionBinding = { count: number; summary: string };
+type InspectionGrant = {
+  witness: string;
+  digest: string;
+  activeUserEntryId: string;
+  bindings: Map<string, InspectionBinding>;
+  candidates: InspectCandidate[];
+  activeEpisode: { timestamp: string; userPrompt: string };
+  evaluatedCount: number;
+  acceptedCount: number;
+  refusedCount: number;
+  refusalReasons: Record<RefusalReasonKey, number>;
+  cursors: Map<string, number>;
+  relationFrontier: Record<RetirementRelation, { acceptedCount: number; minCount: number; maxCount: number } | null>;
+  largestSafe: Record<string, unknown> | null;
+};
+const INSPECTION_BYTE_LIMIT = 2_048;
+
+function promptPreview(entry: SessionLikeEntry): string {
+  const content = entry.message?.content;
+  const firstText = typeof content === "string" ? content : Array.isArray(content)
+    ? content.find((part): part is { type: "text"; text: string } =>
+      typeof part === "object" && part !== null && (part as any).type === "text" && typeof (part as any).text === "string",
+    )?.text
+    : undefined;
+  if (firstText !== undefined) {
+    const normalized = firstText.replace(/\s+/g, " ").trim();
+    if (!normalized) return "(empty)";
+    return normalized.length > 45 ? normalized.slice(0, 44) + "…" : normalized;
+  }
+  if (content === undefined || content === null || Array.isArray(content) && content.length === 0) return "(empty)";
+  return "(non-text prompt)";
+}
+function isoTimestamp(entry: SessionLikeEntry): string {
+  const value = entry.message?.timestamp ?? entry.timestamp;
+  const date = new Date(typeof value === "number" ? value : value);
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
+}
+/** Fingerprint exactly the resolved producer/message prefix that can affect retirement selection. */
+function activeRootDigest(entries: SessionLikeEntry[], activeUserEntryId: string): string {
+  const activeIndex = entries.findIndex((entry) => entry.id === activeUserEntryId);
+  if (activeIndex < 0) throw new Error("Episode inspection refused: active root is unavailable.");
+  return hashJson(entries.slice(0, activeIndex + 1).map((entry) => ({
+    id: entry.id,
+    fingerprint: fingerprintEntry(entry),
+    providerMessages: sessionEntryToContextMessages(entry as any),
+  })));
+}
+function inspectionPage(grant: InspectionGrant, start: number): { content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> } {
+  let end = start;
+  let nextCursor: string | null = null;
+  const base = {
+    inspectionWitness: grant.witness,
+    activeEpisode: grant.activeEpisode,
+    evaluatedCount: grant.evaluatedCount,
+    acceptedCount: grant.acceptedCount,
+    refusedCount: grant.refusedCount,
+    refusalReasons: grant.refusalReasons,
+    relationFrontier: grant.relationFrontier,
+    largestSafe: grant.largestSafe,
+  };
+  while (end < grant.candidates.length) {
+    const prospectiveEnd = end + 1;
+    const cursor = prospectiveEnd < grant.candidates.length ? randomUUID() : null;
+    const details = { ...base, candidates: grant.candidates.slice(start, prospectiveEnd), nextCursor: cursor };
+    const serialized = JSON.stringify(details);
+    if (Buffer.byteLength(serialized, "utf8") > INSPECTION_BYTE_LIMIT) break;
+    end = prospectiveEnd;
+    nextCursor = cursor;
+  }
+  if (end === start && grant.candidates.length > 0) throw new Error("Episode inspection refused: one complete candidate exceeds the response bound.");
+  if (nextCursor) grant.cursors.set(nextCursor, end);
+  const details = { ...base, candidates: grant.candidates.slice(start, end), nextCursor };
+  const text = JSON.stringify(details);
+  if (Buffer.byteLength(text, "utf8") > INSPECTION_BYTE_LIMIT || Buffer.byteLength(JSON.stringify(details), "utf8") > INSPECTION_BYTE_LIMIT) {
+    throw new Error("Episode inspection refused: response exceeds the bound.");
+  }
+  return { content: [{ type: "text", text }], details };
+}
+
 const retireSchema = Type.Object({
-  latestCompletedEpisodes: Type.Integer({ minimum: 1 }),
-  continuationGoal: Type.String({
-    minLength: 1,
-    maxLength: CONTINUATION_GOAL_MAX_CHARS,
-  }),
+  fromEpisodeInclusive: Type.String({ minLength: 1, description: "Witness-scoped oldest included completed episode anchor; it and every newer completed episode are retired." }),
+  inspectionWitness: Type.String({ minLength: 1, description: "Opaque authority returned by the current inspect_episode_retirement call." }),
+  continuationGoal: Type.String({ minLength: 1, maxLength: CONTINUATION_GOAL_MAX_CHARS, description: "Non-blank continuation objective for the capsule model; the active agent authors it." }),
+  pinnedWorkingState: Type.String({ maxLength: 2_000, description: "Required non-blank <=2000-character critical state, independently authored by the active agent and persisted unchanged by this extension." }),
 });
+function preflightSummary(preflight: RetirementPreflight): string | undefined {
+  if ("reason" in preflight) return undefined;
+  return hashJson({ selection: preflight.selection, relation: preflight.relation, before: preflight.before.map((entry) => entry.id), after: preflight.after.map((entry) => entry.id), parentSource: preflight.parentSource.map((entry) => entry.id), emitsV4: preflight.emitsV4 });
+}
 
 export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
   if (process.env[EPISODE_RETIREMENT_ENABLED_VAR] !== "true") return;
+  let inspectionGrant: InspectionGrant | undefined;
 
   pi.registerTool({
     name: "inspect_episode_retirement",
     label: "inspect episode retirement",
-    description: "Read-only mechanical inspection of safe completed-episode retirement candidates. Run this first when a prior continuation capsule exists; retain judgment about whether and what to retire.",
-    parameters: Type.Object({}),
+    description: "Read-only mechanical inspection of safe completed-episode retirement candidates.",
+    parameters: Type.Object({ cursor: Type.Optional(Type.String()) }),
     executionMode: "sequential",
-    async execute(_id, _params, _signal, _onUpdate, ctx) {
+    async execute(_id, params: { cursor?: string }, _signal, _onUpdate, ctx) {
+      if (params.cursor !== undefined) {
+        if (!inspectionGrant) throw new Error("Episode inspection refused: unknown or stale cursor.");
+        const start = inspectionGrant.cursors.get(params.cursor);
+        if (start === undefined) throw new Error("Episode inspection refused: unknown or stale cursor.");
+        let contextEntries: SessionLikeEntry[];
+        try { contextEntries = resolvedSlots(ctx.sessionManager); } catch { throw new Error("Episode inspection refused: resolved context is unavailable."); }
+        const activeRoot = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").at(-1);
+        if (!activeRoot || activeRoot.id !== inspectionGrant.activeUserEntryId || activeRootDigest(contextEntries, activeRoot.id) !== inspectionGrant.digest) {
+          throw new Error("Episode inspection refused: unknown or stale cursor.");
+        }
+        return inspectionPage(inspectionGrant, start);
+      }
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
       let contextEntries: SessionLikeEntry[];
       try { contextEntries = resolvedSlots(ctx.sessionManager); } catch { throw new Error("Episode inspection refused: resolved context is unavailable."); }
@@ -719,33 +861,19 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       if (assessment.state === "compacted") throw new Error("Episode inspection refused: native compaction after retirement is unsupported.");
       if (assessment.state === "malformed") throw new Error("Episode inspection refused: latest receipt chain is malformed or inactive.");
       const parentEntry = assessment.state === "valid" ? assessment.entry : undefined;
+      const activeRoot = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").at(-1);
+      if (!activeRoot) throw new Error("Episode inspection refused: no active user root.");
       const maxCount = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").length - 1;
-      type Frontier = { acceptedCount: number; minCount: number; maxCount: number };
-      type Candidate = {
-        count: number; relation: RetirementRelation;
-        earlierAddedEpisodeCount: number; earlierAddedMessageCount: number;
-        laterAddedEpisodeCount: number; laterAddedMessageCount: number;
-        cumulativeEpisodeCount: number; cumulativeMessageCount: number;
-        cumulativeSourceBytes: number; startId: string; endId: string;
-      };
-      const relationFrontier: Record<RetirementRelation, Frontier | null> = {
-        initial: null, forward: null, recompose: null, deepen: null,
-      };
       const refusalReasons: Record<RefusalReasonKey, number> = {
-        insufficientCompletedEpisodes: 0,
-        unsupportedCandidate: 0,
-        incompleteAssistantBoundary: 0,
-        unmatchedToolResult: 0,
-        openToolCalls: 0,
-        activeAlignment: 0,
-        parentUnavailable: 0,
-        partialOverlapOrGap: 0,
-        v4MissingAfterInterval: 0,
-        exactForwardRequired: 0,
+        insufficientCompletedEpisodes: 0, unsupportedCandidate: 0, incompleteAssistantBoundary: 0,
+        unmatchedToolResult: 0, openToolCalls: 0, activeAlignment: 0, parentUnavailable: 0,
+        partialOverlapOrGap: 0, v4MissingAfterInterval: 0, exactForwardRequired: 0,
       };
-      let acceptedCount = 0;
+      const candidates: InspectCandidate[] = [];
+      const bindings = new Map<string, InspectionBinding>();
+      const relationFrontier: InspectionGrant["relationFrontier"] = { initial: null, forward: null, recompose: null, deepen: null };
+      let largestSafe: Record<string, unknown> | null = null;
       let refusedCount = 0;
-      let largestSafe: Candidate | null = null;
       for (let count = 1; count <= maxCount; count++) {
         const preflight = preflightRetirement(contextEntries, parentEntry, count);
         if ("reason" in preflight) {
@@ -753,38 +881,39 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           refusalReasons[refusalReasonKey[preflight.reason]]++;
           continue;
         }
-        const cumulativeIds = parentEntry && preflight.emitsV4
-          ? [...preflight.before, ...preflight.parentSource, ...preflight.after].map((entry) => entry.id)
-          : parentEntry ? [...parentEntry.data.sourceEntryIds, ...preflight.selection.sourceEntryIds]
-          : preflight.selection.sourceEntryIds;
+        const root = contextEntries.find((entry) => entry.id === preflight.selection.sourceEntryIds[0])!;
+        const selectedProviderMessages = preflight.selection.sourceEntryIds.map((id) => contextEntries.find((entry) => entry.id === id)!.message);
+        const id = `ep-${count}`;
+        candidates.push({ id, timestamp: isoTimestamp(root), userPrompt: promptPreview(root), retiresEpisodes: count, sourceMessageBytes: Buffer.byteLength(JSON.stringify(selectedProviderMessages), "utf8") });
+        bindings.set(id, { count, summary: preflightSummary(preflight)! });
+        const cumulativeIds = parentEntry && preflight.emitsV4 ? [...preflight.before, ...preflight.parentSource, ...preflight.after].map((entry) => entry.id) : parentEntry ? [...parentEntry.data.sourceEntryIds, ...preflight.selection.sourceEntryIds] : preflight.selection.sourceEntryIds;
         const earlier = rawMetrics(contextEntries, preflight.before.map((entry) => entry.id));
         const later = rawMetrics(contextEntries, preflight.after.map((entry) => entry.id));
         const cumulative = rawMetrics(contextEntries, cumulativeIds);
-        const candidate: Candidate = { count, relation: preflight.relation, earlierAddedEpisodeCount: earlier.completedEpisodeCount, earlierAddedMessageCount: earlier.sourceMessageCount, laterAddedEpisodeCount: later.completedEpisodeCount, laterAddedMessageCount: later.sourceMessageCount, cumulativeEpisodeCount: cumulative.completedEpisodeCount, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, startId: cumulativeIds[0]!, endId: cumulativeIds.at(-1)! };
-        acceptedCount++;
-        largestSafe = candidate;
-        const frontier = relationFrontier[candidate.relation];
-        relationFrontier[candidate.relation] = frontier
-          ? { acceptedCount: frontier.acceptedCount + 1, minCount: frontier.minCount, maxCount: count }
-          : { acceptedCount: 1, minCount: count, maxCount: count };
+        largestSafe = { count, relation: preflight.relation, earlierAddedEpisodeCount: earlier.completedEpisodeCount, earlierAddedMessageCount: earlier.sourceMessageCount, laterAddedEpisodeCount: later.completedEpisodeCount, laterAddedMessageCount: later.sourceMessageCount, cumulativeEpisodeCount: cumulative.completedEpisodeCount, cumulativeMessageCount: cumulative.sourceMessageCount, cumulativeSourceBytes: cumulative.sourceMessageBytes, startId: cumulativeIds[0]!, endId: cumulativeIds.at(-1)! };
+        const frontier = relationFrontier[preflight.relation];
+        relationFrontier[preflight.relation] = frontier ? { acceptedCount: frontier.acceptedCount + 1, minCount: frontier.minCount, maxCount: count } : { acceptedCount: 1, minCount: count, maxCount: count };
       }
-      const details = { evaluatedCount: maxCount, acceptedCount, refusedCount, refusalReasons, relationFrontier, largestSafe };
-      return { content: [{ type: "text", text: JSON.stringify(details) }], details };
+      inspectionGrant = {
+        witness: randomUUID(), digest: activeRootDigest(contextEntries, activeRoot.id), activeUserEntryId: activeRoot.id, bindings, candidates,
+        activeEpisode: { timestamp: isoTimestamp(activeRoot), userPrompt: promptPreview(activeRoot) },
+        evaluatedCount: maxCount, acceptedCount: candidates.length, refusedCount, refusalReasons, cursors: new Map(), relationFrontier, largestSafe,
+      };
+      return inspectionPage(inspectionGrant, 0);
     },
   });
 
   pi.registerTool({
     name: "retire_episodes",
     label: "retire episodes",
-    description:
-      "Choose the largest contiguous suffix of fully settled completed episodes: retained completed episodes continue consuming context, cache, and local inference time. If a prior continuation capsule exists, run inspect_episode_retirement first: latestCompletedEpisodes counts original raw completed episodes including those already represented by the capsule; a broader safe suffix is allowed. Never include active work. Supply a concise continuation goal; the configured secondary model authors the capsule.",
+    description: "Before every retirement call, inspect_episode_retirement and page as needed. Independently choose fromEpisodeInclusive as the oldest included completed episode, author continuationGoal and pinnedWorkingState, then provide the inspectionWitness. The capsule model does not decide the boundary, goal, or pin. Never include active work.",
     parameters: retireSchema,
     executionMode: "sequential",
     renderResult(result, { expanded, isPartial }, theme, context) {
       if (isPartial) {
         return new Text(theme.fg("warning", "Authoring retirement capsule…"), 0, 0);
       }
-      const receipt = result.details as (EpisodeRetirementReceiptV2 | EpisodeRetirementReceiptV3 | EpisodeRetirementReceiptV4) | undefined;
+      const receipt = result.details as (EpisodeRetirementReceiptV2 | EpisodeRetirementReceiptV3 | EpisodeRetirementReceiptV4 | EpisodeRetirementReceiptV5) | undefined;
       const metrics = receipt?.replacementMetrics;
       if (!receipt || !metrics) {
         const text = result.content.flatMap((part) =>
@@ -807,31 +936,30 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           ? [`$${usage.cost.total}`]
           : [],
       ).join(" · ");
-      const generation = receipt.version === 3 ? `generation ${receipt.generation}; this retirement: ${receipt.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${receipt.deltaMetrics.newlyCompletedMessageCount} message(s), ${receipt.deltaMetrics.newlyCompletedSourceBytes} B source → ${receipt.deltaMetrics.newCapsuleTextBytes} B capsule-text` : receipt.version === 4 ? `generation ${receipt.generation}; earlier additions: ${receipt.compositionMetrics.earlierEpisodeCount} episode(s), ${receipt.compositionMetrics.earlierMessageCount} message(s), ${receipt.compositionMetrics.earlierSourceBytes} B; later additions: ${receipt.compositionMetrics.laterEpisodeCount} episode(s), ${receipt.compositionMetrics.laterMessageCount} message(s), ${receipt.compositionMetrics.laterSourceBytes} B; cumulative ${receipt.compositionMetrics.cumulativeMessageCount} message(s), ${receipt.compositionMetrics.cumulativeSourceBytes} B source → ${receipt.compositionMetrics.newCapsuleTextBytes} B capsule-text` : "generation 1";
+      const generation = receipt.version === 3 || receipt.version === 5 && receipt.mode === "forward" ? `generation ${receipt.generation}; this retirement: ${receipt.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${receipt.deltaMetrics.newlyCompletedMessageCount} message(s), ${receipt.deltaMetrics.newlyCompletedSourceBytes} B source → ${receipt.deltaMetrics.newCapsuleTextBytes} B capsule-text` : receipt.version === 4 || receipt.version === 5 && (receipt.mode === "recompose" || receipt.mode === "deepen") ? `generation ${receipt.generation}; earlier additions: ${receipt.compositionMetrics.earlierEpisodeCount} episode(s), ${receipt.compositionMetrics.earlierMessageCount} message(s), ${receipt.compositionMetrics.earlierSourceBytes} B; later additions: ${receipt.compositionMetrics.laterEpisodeCount} episode(s), ${receipt.compositionMetrics.laterMessageCount} message(s), ${receipt.compositionMetrics.laterSourceBytes} B; cumulative ${receipt.compositionMetrics.cumulativeMessageCount} message(s), ${receipt.compositionMetrics.cumulativeSourceBytes} B source → ${receipt.compositionMetrics.newCapsuleTextBytes} B capsule-text` : "generation 1";
       const compact = `${generation}; cumulative ${metrics.completedEpisodeCount} completed episode(s), ${metrics.sourceMessageCount} source message(s), ${metrics.sourceMessageBytes} B serialized source → ${metrics.capsuleTextBytes} B capsule-text; ${receipt.provider}/${receipt.model} (${receipt.reasoningEffort})${usageText ? `; LLM: ${usageText}` : ""}`;
       if (!expanded) {
         return new Text(theme.fg("success", `${compact} (${keyHint("app.tools.expand", "to expand")})`), 0, 0);
       }
-      return new Text(theme.fg("success", `${compact}\n\nProvider-facing context (exact capsule text; not rewritten JSONL history):\n${capsuleText(receipt.capsule, receipt.sourceEntryIds)}\n\nProvenance: ${receipt.sourceEntryIds.join(", ")}`), 0, 0);
+      return new Text(theme.fg("success", `${compact}\n\nProvider continuation (exact text; not rewritten JSONL history):\n${continuationText(receipt as AnyReceipt)}\n\nProvenance: ${receipt.sourceEntryIds.join(", ")}`), 0, 0);
     },
     async execute(_id, params, signal, onUpdate, ctx) {
       const branch = ctx.sessionManager.getBranch() as SessionLikeEntry[];
-      if (
-        typeof params.continuationGoal !== "string" ||
-        !params.continuationGoal.trim() ||
-        params.continuationGoal.length > CONTINUATION_GOAL_MAX_CHARS
-      ) {
-        throw new Error(
-          "Episode retirement requires a non-empty bounded continuationGoal.",
-        );
-      }
+      if (typeof params.continuationGoal !== "string" || !params.continuationGoal.trim() || params.continuationGoal.length > CONTINUATION_GOAL_MAX_CHARS) throw new Error("Episode retirement requires a non-empty bounded continuationGoal.");
+      if (typeof params.pinnedWorkingState !== "string" || !params.pinnedWorkingState.trim() || params.pinnedWorkingState.length > 2_000) throw new Error("Episode retirement requires a non-empty bounded pinnedWorkingState.");
+      if (!inspectionGrant || params.inspectionWitness !== inspectionGrant.witness) throw new Error("Episode retirement refused: inspection witness authority is unavailable.");
+      const binding = inspectionGrant.bindings.get(params.fromEpisodeInclusive);
+      if (!binding) throw new Error("Episode retirement refused: inspection witness authority is unavailable.");
       const contextEntries = resolvedSlots(ctx.sessionManager);
+      const activeRoot = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").at(-1);
+      if (!activeRoot || activeRoot.id !== inspectionGrant.activeUserEntryId || activeRootDigest(contextEntries, activeRoot.id) !== inspectionGrant.digest) throw new Error("Episode retirement refused: inspection witness authority is stale.");
       const assessment = assessLatestReceipt(branch, contextEntries);
       if (assessment.state === "compacted") throw new Error("Episode retirement refused: native compaction after retirement is unsupported.");
       if (assessment.state === "malformed") throw new Error("Episode retirement refused: latest receipt chain is malformed or inactive.");
       const parentEntry = assessment.state === "valid" ? assessment.entry : undefined;
-      const preflight = preflightRetirement(contextEntries, parentEntry, params.latestCompletedEpisodes);
-      if ("reason" in preflight) throw new Error("Episode retirement refused: " + preflight.reason + ".");
+      const preflight = preflightRetirement(contextEntries, parentEntry, binding.count);
+      if ("reason" in preflight || preflightSummary(preflight) !== binding.summary) throw new Error("Episode retirement refused: inspection witness authority is stale.");
+      const count = binding.count;
       const { selection, before, after, parentSource, emitsV4 } = preflight;
       if (signal?.aborted) {
         throw new Error("Episode retirement capsule request aborted.");
@@ -875,7 +1003,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
           role: "user",
           content: [{
             type: "text",
-            text: capsuleRequest(selected, active, params.continuationGoal, parentEntry?.data.capsule, before, after, emitsV4),
+            text: capsuleRequest(selected, active, params.continuationGoal, params.pinnedWorkingState, parentEntry?.data.capsule, before, after, emitsV4),
           }],
           timestamp: Date.now(),
         }],
@@ -907,28 +1035,26 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
         ...cumulativeRaw,
         capsuleTextBytes: Buffer.byteLength(capsuleText(capsule, cumulativeIds)),
       };
-      const receipt: EpisodeRetirementReceipt = parentEntry && emitsV4 ? {
-        version: 4, kind: RECEIPT_TYPE, sourceEntryIds: cumulativeIds, sourceFingerprints: cumulativeFingerprints,
-        activeUserEntryId: selection.activeUserEntryId, capsule, provider: configured.provider, model: configured.model,
-        reasoningEffort, promptVersion: "capsule-v4", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
-        generation: parentEntry.data.version === 3 || parentEntry.data.version === 4 ? parentEntry.data.generation + 1 : 2,
-        parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data), priorCapsuleFingerprint: hashJson(parentEntry.data.capsule),
-        newlyIncorporatedBeforeParentEntries: before.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
-        newlyCompletedAfterParentEntries: after.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
-        compositionMetrics: { earlierEpisodeCount: rawMetrics(contextEntries, before.map((entry) => entry.id)).completedEpisodeCount, earlierMessageCount: before.length, earlierSourceBytes: Buffer.byteLength(JSON.stringify(before.map((entry) => entry.message))), laterEpisodeCount: rawMetrics(contextEntries, after.map((entry) => entry.id)).completedEpisodeCount, laterMessageCount: after.length, laterSourceBytes: Buffer.byteLength(JSON.stringify(after.map((entry) => entry.message))), cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)), newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
-      } : parentEntry ? {
-        version: 3, kind: RECEIPT_TYPE, sourceEntryIds: cumulativeIds, sourceFingerprints: cumulativeFingerprints,
-        activeUserEntryId: selection.activeUserEntryId, capsule, provider: configured.provider, model: configured.model,
-        reasoningEffort, promptVersion: "capsule-v3", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
-        generation: parentEntry.data.version === 3 ? parentEntry.data.generation + 1 : 2,
-        parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data),
-        priorCapsuleFingerprint: hashJson(parentEntry.data.capsule), newlyCompletedEpisodeEntries: selected.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
-        deltaMetrics: { newlyCompletedEpisodeCount: params.latestCompletedEpisodes, newlyCompletedMessageCount: selected.length, newlyCompletedSourceBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))), cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)), newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
-      } : {
-        version: 2, kind: RECEIPT_TYPE, ...selection, capsule, provider: configured.provider, model: configured.model,
-        reasoningEffort, promptVersion: "capsule-v2", usage: response.usage as unknown as Record<string, unknown>, replacementMetrics,
-      };
+      const common = { version: 5 as const, kind: RECEIPT_TYPE as "episode-retirement", sourceEntryIds: cumulativeIds, sourceFingerprints: cumulativeFingerprints, activeUserEntryId: selection.activeUserEntryId, capsule, pinnedWorkingState: params.pinnedWorkingState, provider: configured.provider, model: configured.model, reasoningEffort, promptVersion: "capsule-v5" as const, usage: Object.fromEntries(Object.entries(response.usage)), replacementMetrics } satisfies Omit<EpisodeRetirementReceiptV5Initial, "mode">;
+      let receipt: EpisodeRetirementReceiptV5;
+      if (parentEntry && emitsV4) {
+        receipt = {
+          ...common, mode: before.length === 0 ? "recompose" : "deepen", generation: nextGeneration(parentEntry.data),
+          parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data), priorCapsuleFingerprint: hashJson(parentEntry.data.capsule),
+          newlyIncorporatedBeforeParentEntries: before.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })), newlyCompletedAfterParentEntries: after.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
+          compositionMetrics: { earlierEpisodeCount: rawMetrics(contextEntries, before.map((entry) => entry.id)).completedEpisodeCount, earlierMessageCount: before.length, earlierSourceBytes: Buffer.byteLength(JSON.stringify(before.map((entry) => entry.message))), laterEpisodeCount: rawMetrics(contextEntries, after.map((entry) => entry.id)).completedEpisodeCount, laterMessageCount: after.length, laterSourceBytes: Buffer.byteLength(JSON.stringify(after.map((entry) => entry.message))), cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)), newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
+        } satisfies EpisodeRetirementReceiptV5Corrective;
+      } else if (parentEntry) {
+        receipt = {
+          ...common, mode: "forward", generation: nextGeneration(parentEntry.data),
+          parentReceiptEntryId: parentEntry.id, parentReceiptFingerprint: hashJson(parentEntry.data), priorCapsuleFingerprint: hashJson(parentEntry.data.capsule), newlyCompletedEpisodeEntries: selected.map((entry) => ({ id: entry.id, fingerprint: fingerprintEntry(entry) })),
+          deltaMetrics: { newlyCompletedEpisodeCount: count, newlyCompletedMessageCount: selected.length, newlyCompletedSourceBytes: Buffer.byteLength(JSON.stringify(selected.map((entry) => entry.message))), cumulativeMessageCount: cumulative.length, cumulativeSourceBytes: replacementMetrics.sourceMessageBytes, priorCapsuleTextBytes: Buffer.byteLength(capsuleText(parentEntry.data.capsule, parentEntry.data.sourceEntryIds)), newCapsuleTextBytes: replacementMetrics.capsuleTextBytes },
+        } satisfies EpisodeRetirementReceiptV5Forward;
+      } else {
+        receipt = { ...common, mode: "initial" } satisfies EpisodeRetirementReceiptV5Initial;
+      }
       pi.appendEntry(RECEIPT_TYPE, receipt);
+      inspectionGrant = undefined;
       // Public ExtensionAPI tool-result typing does not expose nested completion usage.
       return {
         content: [{

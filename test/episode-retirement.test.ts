@@ -49,6 +49,16 @@ const publicSession = (branch: SessionLikeEntry[]) => {
     getLeafId: () => branch.at(-1)?.id ?? null, buildContextEntries: () => branch,
   };
 };
+function anchoredRetire(rawRetire: any, inspect: any) {
+  return { ...rawRetire, execute: async (id: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+    if (typeof params.latestCompletedEpisodes === "number") {
+      const page = await inspect.execute("legacy-test-inspect", {}, undefined, undefined, ctx);
+      params = { fromEpisodeInclusive: `ep-${params.latestCompletedEpisodes}`, inspectionWitness: page.details.inspectionWitness, continuationGoal: params.continuationGoal, pinnedWorkingState: "legacy test pin" };
+    }
+    return rawRetire.execute(id, params, signal, onUpdate, ctx);
+  } };
+}
+
 const extensionHarness = (manager: SessionManager) => {
   const tools: any[] = [], handlers: Record<string, any> = {}, appended: unknown[] = []; let finds = 0, auths = 0;
   const pi: any = {
@@ -62,12 +72,47 @@ const extensionHarness = (manager: SessionManager) => {
   process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
   mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
   registerEpisodeRetirement(pi);
+  const inspect = tools.find((tool) => tool.name === "inspect_episode_retirement");
+  const rawRetire = tools.find((tool) => tool.name === "retire_episodes");
+  const retire = anchoredRetire(rawRetire, inspect);
   return {
-    retire: tools.find((tool) => tool.name === "retire_episodes"), inspect: tools.find((tool) => tool.name === "inspect_episode_retirement"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
+    retire, inspect, recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
     streams: () => mockStreamSimple.mock.calls.length, finds: () => finds, auths: () => auths,
     ctx: { sessionManager: manager, modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
   };
 };
+
+async function inspectAnchor(h: any, id = "ep-1", overrides: Record<string, unknown> = {}) {
+  const inspected = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+  expect(inspected.details.candidates.find((candidate: any) => candidate.id === id)).toBeDefined();
+  return {
+    fromEpisodeInclusive: id,
+    inspectionWitness: inspected.details.inspectionWitness,
+    continuationGoal: "continue safely",
+    pinnedWorkingState: "verified finding\nunresolved dependency",
+    ...overrides,
+  };
+}
+function retirementCounts(h: any) {
+  return { finds: h.finds(), auths: h.auths(), streams: h.streams(), appends: h.appended.length };
+}
+async function anchoredRelationFixture() {
+  const manager = SessionManager.inMemory();
+  for (const entry of [user("ignored", "A request"), assistant("ignored", "A done"), user("ignored", "B request"), assistant("ignored", "B done"), user("ignored", "C active")]) manager.appendMessage(entry.message as any);
+  const h = extensionHarness(manager);
+  await h.retire.execute("parent", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, h.ctx);
+  manager.appendMessage(assistant("ignored", "C done").message as any);
+  manager.appendMessage(user("ignored", "D active").message as any);
+  return { manager, h };
+}
+async function futureV5Fixture() {
+  const manager = SessionManager.inMemory();
+  manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any);
+  const source = manager.getEntries().slice(0, 2) as SessionLikeEntry[];
+  const receipt: any = { version: 5, kind: "episode-retirement", sourceEntryIds: source.map((entry) => entry.id), sourceFingerprints: source.map(fingerprintEntry), activeUserEntryId: manager.getEntries()[2].id, capsule, replacementMetrics: { completedEpisodeCount: 1, sourceMessageCount: 2, sourceMessageBytes: Buffer.byteLength(JSON.stringify(source.map((entry) => entry.message)), "utf8"), capsuleTextBytes: 1 }, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v5", usage: {}, mode: "initial", pinnedWorkingState: "valid pin" };
+  manager.appendCustomEntry("episode-retirement", receipt);
+  return { manager, h: extensionHarness(manager), receipt };
+}
 
 async function generation2Fixture() {
   const manager = SessionManager.inMemory();
@@ -103,7 +148,7 @@ async function latestV4Fixture() {
   mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
   registerEpisodeRetirement(pi);
   const h: any = {
-    retire: tools.find((tool) => tool.name === "retire_episodes"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
+    retire: anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")), inspect: tools.find((tool) => tool.name === "inspect_episode_retirement"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
     streams: () => mockStreamSimple.mock.calls.length, finds: () => finds, auths: () => auths,
     ctx: { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
   };
@@ -134,8 +179,8 @@ describe("episode retirement", () => {
       largestSafe: { count: 3, relation: "deepen", earlierAddedEpisodeCount: 1, earlierAddedMessageCount: 2, laterAddedEpisodeCount: 1, laterAddedMessageCount: 2, cumulativeEpisodeCount: 3, cumulativeMessageCount: 6 },
     });
     expect({ appended: h.appended.length, streams: h.streams(), finds: h.finds(), auths: h.auths() }).toEqual(before);
-    expect(JSON.stringify(result)).not.toContain("A request");
-    expect(JSON.stringify(result)).not.toContain("B request");
+    expect(result.details.candidates.map((candidate: any) => candidate.id)).toEqual(["ep-1", "ep-2", "ep-3"]);
+    expect(result.details.candidates.map((candidate: any) => candidate.userPrompt)).toEqual(["C active", "B request", "A request"]);
   });
 
   it.each([
@@ -229,7 +274,7 @@ describe("episode retirement", () => {
 
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
     registerEpisodeRetirement(pi);
-    const retire = tools.find((tool) => tool.name === "retire_episodes");
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement"));
     const recall = tools.find((tool) => tool.name === "recall_episode");
     const model = { provider: "google", id: "gemini-3.7-flash" };
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: { totalTokens: 1 } }) });
@@ -264,7 +309,7 @@ describe("episode retirement", () => {
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
     registerEpisodeRetirement(pi);
-    const retire = tools.find((tool) => tool.name === "retire_episodes");
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement"));
     const recall = tools.find((tool) => tool.name === "recall_episode");
     const rawManager = publicSession(branch);
     const ctx: any = { sessionManager: { ...rawManager, getEntries: () => branch, buildContextEntries: () => branch.filter((entry) => entry.type === "message"), getLeafId: () => branch.at(-1)?.id ?? null }, modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) } };
@@ -275,7 +320,7 @@ describe("episode retirement", () => {
     branch.push(assistant("a3", "third done"), user("u4", "active"));
     publicSession(branch);
     await retire.execute("three", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
-    expect(appended.map((receipt) => receipt.version)).toEqual([2, 3, 3]);
+    expect(appended.map((receipt) => receipt.version)).toEqual([5, 5, 5]);
     expect(appended[2].sourceEntryIds).toEqual(["u1", "a1", "u2", "a2", "u3", "a3"]);
     expect(appended[2].newlyCompletedEpisodeEntries.map((entry: any) => entry.id)).toEqual(["u3", "a3"]);
     expect(appended[2].parentReceiptEntryId).toBe("r2");
@@ -308,7 +353,7 @@ describe("episode retirement", () => {
     const expectedCompact = `generation ${r.generation}; this retirement: ${r.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${r.deltaMetrics.newlyCompletedMessageCount} message(s), ${r.deltaMetrics.newlyCompletedSourceBytes} B source → ${r.deltaMetrics.newCapsuleTextBytes} B capsule-text; cumulative ${r.replacementMetrics.completedEpisodeCount} completed episode(s), ${r.replacementMetrics.sourceMessageCount} source message(s), ${r.replacementMetrics.sourceMessageBytes} B serialized source → ${r.replacementMetrics.capsuleTextBytes} B capsule-text; ${r.provider}/${r.model} (${r.reasoningEffort})`;
     expect(compact.text).toBe(`${expectedCompact} (to expand)`);
     const exactCapsule = "[CONTINUATION CAPSULE — episode retirement]\nObjective: Understand the repository.\nFindings:\n- Repository inspected.\nNext step: Use the findings.\nOriginal source entry IDs (recover with recall_episode): u1, a1, u2, a2, u3, a3";
-    expect(expanded.text).toBe(`${expectedCompact}\n\nProvider-facing context (exact capsule text; not rewritten JSONL history):\n${exactCapsule}\n\nProvenance: u1, a1, u2, a2, u3, a3`);
+    expect(expanded.text).toBe(`${expectedCompact}\n\nProvider continuation (exact text; not rewritten JSONL history):\n[PINNED WORKING STATE]\nlegacy test pin\n[/PINNED STATE]\n\n${exactCapsule}\n\nProvenance: u1, a1, u2, a2, u3, a3`);
   });
 
   it.each([
@@ -406,20 +451,20 @@ describe("episode retirement", () => {
     expect({ streams: fixture.h.streams(), finds: fixture.h.finds(), auths: fixture.h.auths() }).toEqual(beforeCalls);
   });
 
-  it("emits a V4 exact-forward child and renders its exact capsule/provenance", async () => {
+  it("emits a V5 forward child and renders its exact continuation/provenance", async () => {
     const fixture = await latestV4Fixture();
     fixture.branch.push(assistant("a2", "second done"), user("u3", "third active")); fixture.h.ctx.sessionManager = publicSession(fixture.branch);
     await fixture.h.retire.execute("v4-child", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, fixture.h.ctx);
     const child = fixture.h.appended.at(-1);
-    expect(child).toMatchObject({ version: 4, generation: 3, newlyIncorporatedBeforeParentEntries: [], newlyCompletedAfterParentEntries: [{ id: "u2" }, { id: "a2" }] });
+    expect(child).toMatchObject({ version: 5, mode: "forward", generation: 3, newlyCompletedEpisodeEntries: [{ id: "u2" }, { id: "a2" }] });
     expect(child.parentReceiptFingerprint).toBe(createHash("sha256").update(JSON.stringify(fixture.h.appended[1])).digest("hex"));
     const inventory = await fixture.h.recall.execute("inventory", {}, undefined, undefined, fixture.h.ctx);
     expect(inventory.details.sourceEntryIds).toEqual(child.sourceEntryIds);
     const theme = { fg: (_color: string, text: string) => text };
     const compact = fixture.h.retire.renderResult({ content: [], details: child }, { expanded: false, isPartial: false }, theme, { isError: false }) as any;
     const expanded = fixture.h.retire.renderResult({ content: [], details: child }, { expanded: true, isPartial: false }, theme, { isError: false }) as any;
-    expect(compact.text).toContain(`earlier additions: 0 episode(s), 0 message(s), ${child.compositionMetrics.earlierSourceBytes} B; later additions:`);
-    expect(compact.text).toContain(`cumulative ${child.compositionMetrics.cumulativeMessageCount} message(s)`);
+    expect(compact.text).toContain(`this retirement: ${child.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${child.deltaMetrics.newlyCompletedMessageCount} message(s)`);
+    expect(compact.text).toContain(`${child.deltaMetrics.cumulativeMessageCount} source message(s)`);
     expect((expanded.text.match(/CONTINUATION CAPSULE/g) ?? [])).toHaveLength(1);
     expect(expanded.text).toContain(`Provenance: ${child.sourceEntryIds.join(", ")}`);
   });
@@ -467,7 +512,7 @@ describe("episode retirement", () => {
     expect(colors).toEqual(["error", "success"]);
   });
 
-  it("uses one configured capsule model and persists a V2 receipt with nested usage", async () => {
+  it("uses one configured capsule model and persists a V5 initial receipt with nested usage", async () => {
     const tools: any[] = [];
     const persisted: unknown[] = [];
     const progress: unknown[] = [];
@@ -499,8 +544,8 @@ describe("episode retirement", () => {
     process.env.PI_EPISODE_RETIREMENT_MODEL = "openrouter/google/gemini-3.7-flash";
     process.env.PI_EPISODE_RETIREMENT_REASONING_EFFORT = "high";
     registerEpisodeRetirement(pi);
-    const retire = tools.find((tool) => tool.name === "retire_episodes");
-    expect(Object.keys(retire.parameters.properties)).toEqual(["latestCompletedEpisodes", "continuationGoal"]);
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement"));
+    expect(Object.keys(retire.parameters.properties)).toEqual(["fromEpisodeInclusive", "inspectionWitness", "continuationGoal", "pinnedWorkingState"]);
     const result = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "finish safely with token=goalSecret" }, undefined, (update: unknown) => progress.push(update), { sessionManager: publicSession(branch), modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }), complete: () => { throw new Error("complete must not be called"); } } });
     expect(progress.length).toBeGreaterThan(0);
     expect(fingerprintEntry(branch[0])).toBe(originalFingerprint);
@@ -509,7 +554,7 @@ describe("episode retirement", () => {
     expect(result.content).toEqual([{ type: "text", text: "Selected completed episodes were retired into a continuation capsule." }]);
     expect(JSON.stringify(result.content)).not.toContain("CONTINUATION CAPSULE");
     expect(JSON.stringify(result.content)).not.toContain("u1");
-    expect(persisted[0]).toEqual(expect.objectContaining({ version: 2, provider: "openrouter", model: "google/gemini-3.7-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 1427 }) }));
+    expect(persisted[0]).toEqual(expect.objectContaining({ version: 5, mode: "initial", provider: "openrouter", model: "google/gemini-3.7-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 1427 }) }));
     const receipt = persisted[0] as EpisodeRetirementReceipt;
     const expectedCapsuleText = "[CONTINUATION CAPSULE — episode retirement]\nObjective: finish\nFindings:\n- done\nNext step: ship\nOriginal source entry IDs (recover with recall_episode): u1, a1, t1, a2, t2, a3";
     expect(receipt.replacementMetrics).toEqual({
@@ -561,7 +606,7 @@ describe("episode retirement", () => {
       },
       modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) },
     };
-    const result = await tools.find((tool) => tool.name === "retire_episodes").execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
+    const result = await anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")).execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
     expect(result.isError).toBeUndefined();
     expect(appended).toHaveLength(1);
     const next = await handlers.context({ messages: resolved }, ctx);
@@ -634,7 +679,7 @@ describe("episode retirement", () => {
     manager.appendMessage(assistant("ignored", "active second done").message as any);
     manager.appendMessage(user("ignored", "active third").message as any);
     await h.retire.execute("active-v3", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, h.ctx);
-    expect(h.appended.map((receipt: any) => receipt.version)).toEqual([2, 2, 3]);
+    expect(h.appended.map((receipt: any) => receipt.version)).toEqual([5, 5, 5]);
     const event = { messages: manager.buildSessionContext().messages };
     const projected = await h.handlers.context(event, h.ctx);
     expect(manager.getBranch().filter((entry: any) => entry.customType === "episode-retirement")).toHaveLength(2);
@@ -679,7 +724,7 @@ describe("episode retirement", () => {
     refusedManager.appendMessage(user("ignored", "active").message as any);
     const refused = extensionHarness(refusedManager);
     const streamsBeforeRefusal = refused.streams();
-    await expect(refused.retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, refused.ctx)).rejects.toThrow("unsupported or nonstandard slot inside candidate");
+    await expect(refused.retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, refused.ctx)).rejects.toThrow("inspection witness authority is unavailable");
     expect(refused.streams()).toBe(streamsBeforeRefusal);
     expect(refused.appended).toHaveLength(0);
   });
@@ -692,7 +737,7 @@ describe("episode retirement", () => {
     const raw = manager.getEntries();
     (raw[0] as any).message.content = null;
     const { retire, appended, streams, ctx } = extensionHarness(manager);
-    await expect(retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx)).rejects.toThrow("resolved standard-message fingerprint mismatch");
+    await expect(retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx)).rejects.toThrow("resolved context is unavailable");
     expect(streams()).toBe(0);
     expect(appended).toHaveLength(0);
   });
@@ -717,7 +762,7 @@ describe("episode retirement", () => {
     expect((projected.messages[earlier.length].content as Array<{ text: string }>)[1].text).toBe("active request");
   });
 
-  it("recomposes opaque P + raw A + V2 B + completed cycle into a V4 receipt", async () => {
+  it("recomposes opaque P + raw A + V2 B + completed cycle into a V5 receipt", async () => {
     const branch = [user("uP", "opaque prefix"), assistant("aP", "prefix done"), user("uA", "A"), assistant("aA", "A done"), user("uB", "B"), assistant("aB", "B done"), user("u1", "first active")] as SessionLikeEntry[];
     const tools: any[] = [], appended: any[] = [], handlers: Record<string, any> = {};
     let finds = 0, auths = 0;
@@ -728,13 +773,13 @@ describe("episode retirement", () => {
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
     registerEpisodeRetirement(pi);
-    const retire = tools.find((tool) => tool.name === "retire_episodes"), recall = tools.find((tool) => tool.name === "recall_episode");
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")), recall = tools.find((tool) => tool.name === "recall_episode");
     const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
     await retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
     branch.push(assistant("a1", "retirement assessment complete"), user("u2", "recompose all")); ctx.sessionManager = publicSession(branch);
     await retire.execute("v4", { latestCompletedEpisodes: 3, continuationGoal: "recompose" }, undefined, undefined, ctx);
     const receipt = appended.at(-1);
-    expect(receipt).toMatchObject({ version: 4, sourceEntryIds: ["uA", "aA", "uB", "aB", "u1", "a1"], parentReceiptEntryId: "r1" });
+    expect(receipt).toMatchObject({ version: 5, mode: "deepen", sourceEntryIds: ["uA", "aA", "uB", "aB", "u1", "a1"], parentReceiptEntryId: "r1" });
     expect(new Set(receipt.sourceEntryIds).size).toBe(6);
     expect(receipt.sourceFingerprints).toEqual(branch.filter((entry) => receipt.sourceEntryIds.includes(entry.id)).map(fingerprintEntry));
     expect(receipt.parentReceiptFingerprint).toBe(createHash("sha256").update(JSON.stringify(appended[0])).digest("hex"));
@@ -760,7 +805,7 @@ describe("episode retirement", () => {
     const tools: any[] = [], appended: any[] = [], handlers: Record<string, any> = {}; let finds = 0, auths = 0;
     const pi: any = { registerTool: (tool: any) => tools.push(tool), on: (name: string, handler: any) => { handlers[name] = handler; }, appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); } };
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true"; registerEpisodeRetirement(pi);
-    const retire = tools.find((tool) => tool.name === "retire_episodes"), recall = tools.find((tool) => tool.name === "recall_episode");
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")), recall = tools.find((tool) => tool.name === "recall_episode");
     const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
     await retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
@@ -783,7 +828,7 @@ describe("episode retirement", () => {
     const pi: any = { registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); } };
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true"; registerEpisodeRetirement(pi);
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
-    const retire = tools.find((tool) => tool.name === "retire_episodes"); const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")); const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
     await retire.execute("v2", { latestCompletedEpisodes: 2, continuationGoal: "continue" }, undefined, undefined, ctx);
     branch.push(assistant("aC", "C done"), user("uD", "D active")); ctx.sessionManager = publicSession(branch);
     const streams = mockStreamSimple.mock.calls.length;
@@ -822,15 +867,13 @@ describe("episode retirement", () => {
     const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
     const text = result.content[0].text;
     const detailsText = JSON.stringify(result.details);
-    const containsArray = (value: unknown): boolean => Array.isArray(value) ||
-      typeof value === "object" && value !== null && Object.values(value).some(containsArray);
-
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(2_048);
     expect(Buffer.byteLength(detailsText)).toBeLessThanOrEqual(2_048);
     expect(JSON.parse(text)).toEqual(result.details);
-    expect(containsArray(result.details)).toBe(false);
-    expect(text).not.toContain("SOURCE_SENTINEL");
-    expect(detailsText).not.toContain("SOURCE_SENTINEL");
+    expect(result.details.candidates).toHaveLength(3);
+    expect(result.details.candidates.every((candidate: any) =>
+      Object.keys(candidate).every((key) => ["id", "timestamp", "userPrompt", "retiresEpisodes", "sourceMessageBytes"].includes(key)),
+    )).toBe(true);
     expect(result.details).toMatchObject({
       evaluatedCount: 102,
       acceptedCount: 3,
@@ -885,6 +928,295 @@ describe("episode retirement", () => {
     expect(harness.auths()).toBe(0);
     expect(harness.streams()).toBe(0);
     expect(harness.appended).toHaveLength(0);
+  });
+
+  it("RED: exposes witness-scoped completed-episode candidates and the new retire parameters", async () => {
+    const manager = SessionManager.inMemory();
+    manager.appendMessage({ role: "user", content: [{ type: "text", text: "  first\nrequest  " }], timestamp: Date.parse("2026-01-02T03:04:05Z") } as any);
+    manager.appendMessage(assistant("ignored", "first done").message as any);
+    manager.appendMessage({ role: "user", content: [{ type: "text", text: "second completed request" }], timestamp: Date.parse("2026-01-03T03:04:05Z") } as any);
+    manager.appendMessage(assistant("ignored", "second done").message as any);
+    manager.appendMessage(user("ignored", "active request").message as any);
+    const h = extensionHarness(manager);
+    const inspected = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(Object.keys(h.retire.parameters.properties)).toEqual([
+      "fromEpisodeInclusive", "inspectionWitness", "continuationGoal", "pinnedWorkingState",
+    ]);
+    expect(inspected.details).toMatchObject({
+      inspectionWitness: expect.any(String),
+      candidates: [
+        { id: "ep-1", retiresEpisodes: 1, userPrompt: "second completed request", sourceMessageBytes: expect.any(Number) },
+        { id: "ep-2", retiresEpisodes: 2, userPrompt: "first request", timestamp: "2026-01-02T03:04:05.000Z" },
+      ],
+      activeEpisode: { userPrompt: "active request" },
+    });
+  });
+
+  it("RED: binds all-safe ep-2 to the exact two-episode newest suffix", async () => {
+    const manager = SessionManager.inMemory();
+    for (const message of [
+      { role: "user", content: [{ type: "text", text: "old" }], timestamp: 1 }, { role: "assistant", content: [{ type: "text", text: "done" }], timestamp: 1 },
+      { role: "user", content: [{ type: "text", text: "new" }], timestamp: 1 }, { role: "assistant", content: [{ type: "text", text: "done" }], timestamp: 1 },
+      { role: "user", content: [{ type: "text", text: "active" }], timestamp: 1 },
+    ]) manager.appendMessage(message as any);
+    const h = extensionHarness(manager); const page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(page.details.candidates.map((candidate: any) => candidate.id)).toEqual(["ep-1", "ep-2"]);
+    await h.retire.execute("retire", { fromEpisodeInclusive: "ep-2", inspectionWitness: page.details.inspectionWitness, continuationGoal: "continue", pinnedWorkingState: "pin" }, undefined, undefined, h.ctx);
+    expect((h.appended[0] as any).sourceEntryIds).toEqual(manager.getEntries().slice(0, 4).map((entry: any) => entry.id));
+  });
+
+  it("RED: paginates complete dual envelopes with canonical metrics and no inspect egress", async () => {
+    const manager = SessionManager.inMemory();
+    for (let n = 0; n < 80; n++) {
+      manager.appendMessage({ role: "user", content: [{ type: "text", text: `request ${n} ${"x".repeat(45)}` }], timestamp: 1 } as any);
+      manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "done" }], timestamp: 1 } as any);
+    }
+    manager.appendMessage({ role: "user", content: [{ type: "text", text: "active" }], timestamp: 1 } as any);
+    const h = extensionHarness(manager); const ids: string[] = []; let pageCount = 0;
+    let page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    const witness = page.details.inspectionWitness;
+    do {
+      pageCount++; expect(page.details.candidates.length).toBeGreaterThan(0);
+      expect(Buffer.byteLength(page.content[0].text, "utf8")).toBeLessThanOrEqual(2048);
+      expect(Buffer.byteLength(JSON.stringify(page.details), "utf8")).toBeLessThanOrEqual(2048);
+      expect(page.details.inspectionWitness).toBe(witness);
+      ids.push(...page.details.candidates.map((candidate: any) => candidate.id));
+      page = page.details.nextCursor ? await h.inspect.execute("next", { cursor: page.details.nextCursor }, undefined, undefined, h.ctx) : null;
+    } while (page);
+    expect(ids).toEqual(Array.from({ length: 80 }, (_, index) => `ep-${index + 1}`));
+    expect(new Set(ids).size).toBe(80); expect(pageCount).toBeGreaterThanOrEqual(2);
+    expect(h.streams()).toBe(0); expect(h.finds()).toBe(0); expect(h.auths()).toBe(0); expect(h.appended).toHaveLength(0);
+  });
+
+  it("uses only the first text part and bounded preview fallbacks", async () => {
+    const manager = SessionManager.inMemory();
+    const complete = (content: unknown) => {
+      manager.appendMessage({ role: "user", content, timestamp: 1 } as any);
+      manager.appendMessage(assistant("ignored", "done").message as any);
+    };
+    complete([{ type: "text", text: "  first\ntext  " }, { type: "text", text: "ignored second text" }]);
+    complete([{ type: "text", text: "x".repeat(46) }]);
+    complete([]);
+    complete([{ type: "toolCall", id: "call", name: "bash", arguments: {} }]);
+    manager.appendMessage(user("ignored", "active").message as any);
+    const h = extensionHarness(manager);
+    const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(result.details.candidates.map((candidate: any) => candidate.userPrompt)).toEqual([
+      "(non-text prompt)", "(empty)", "x".repeat(44) + "…", "first text",
+    ]);
+    expect(result.details.candidates[2].userPrompt).toHaveLength(45);
+  });
+
+  it("rejects a cursor when the resolved prefix changes", async () => {
+    const manager = SessionManager.inMemory();
+    for (let n = 0; n < 20; n++) {
+      manager.appendMessage(user("ignored", `request ${n}`).message as any);
+      manager.appendMessage(assistant("ignored", "done").message as any);
+    }
+    manager.appendMessage(user("ignored", "active").message as any);
+    const h = extensionHarness(manager);
+    const page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    (manager.getEntries()[0] as any).message.content = [{ type: "text", text: "changed" }];
+    await expect(h.inspect.execute("next", { cursor: page.details.nextCursor }, undefined, undefined, h.ctx)).rejects.toThrow("stale cursor");
+    expect(h.streams()).toBe(0); expect(h.finds()).toBe(0); expect(h.auths()).toBe(0); expect(h.appended).toHaveLength(0);
+  });
+
+  it("rejects a cursor when a new user root is added", async () => {
+    const manager = SessionManager.inMemory();
+    for (let n = 0; n < 20; n++) {
+      manager.appendMessage(user("ignored", `request ${n}`).message as any);
+      manager.appendMessage(assistant("ignored", "done").message as any);
+    }
+    manager.appendMessage(user("ignored", "active").message as any);
+    const h = extensionHarness(manager);
+    const page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    manager.appendMessage(user("ignored", "new active root").message as any);
+    await expect(h.inspect.execute("next", { cursor: page.details.nextCursor }, undefined, undefined, h.ctx)).rejects.toThrow("stale cursor");
+  });
+
+  it("keeps cursors repeatable and fresh through post-root assistant and tool traffic", async () => {
+    const manager = SessionManager.inMemory();
+    for (let n = 0; n < 20; n++) {
+      manager.appendMessage(user("ignored", `request ${n}`).message as any);
+      manager.appendMessage(assistant("ignored", "done").message as any);
+    }
+    manager.appendMessage(user("ignored", "active").message as any);
+    const h = extensionHarness(manager);
+    const first = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    manager.appendMessage(assistant("ignored", "post-root assistant").message as any);
+    manager.appendMessage(tool("ignored", "post-root-call").message as any);
+    const repeated = await Promise.all(["one", "two"].map((id) =>
+      h.inspect.execute(id, { cursor: first.details.nextCursor }, undefined, undefined, h.ctx),
+    ));
+    expect(repeated.map((page) => page.details.candidates.map((candidate: any) => candidate.id))).toEqual([
+      repeated[0].details.candidates.map((candidate: any) => candidate.id),
+      repeated[0].details.candidates.map((candidate: any) => candidate.id),
+    ]);
+    expect(repeated.map((page) => page.details.inspectionWitness)).toEqual([first.details.inspectionWitness, first.details.inspectionWitness]);
+    expect(h.streams()).toBe(0); expect(h.finds()).toBe(0); expect(h.auths()).toBe(0); expect(h.appended).toHaveLength(0);
+  });
+
+  describe("C1 RED: anchored retirement, pin, and V5", () => {
+    it("requires exactly the anchored retire schema and has no scalar count", async () => {
+      const manager = SessionManager.inMemory();
+      manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any);
+      const h = extensionHarness(manager);
+      expect(Object.keys(h.retire.parameters.properties)).toEqual(["fromEpisodeInclusive", "inspectionWitness", "continuationGoal", "pinnedWorkingState"]);
+      expect(h.retire.parameters.properties.latestCompletedEpisodes).toBeUndefined();
+      await expect(h.retire.execute("schema", await inspectAnchor(h), undefined, undefined, h.ctx)).resolves.toBeDefined();
+    });
+
+    it.each([
+      ["missing", undefined], ["non-string", 1], ["blank", " \n "], ["over 2000", "x".repeat(2_001)],
+    ])("rejects %s pin before model egress or append", async (_name, pinnedWorkingState) => {
+      const manager = SessionManager.inMemory();
+      manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any);
+      const h = extensionHarness(manager); const before = retirementCounts(h);
+      await expect(h.retire.execute("pin", await inspectAnchor(h, "ep-1", { pinnedWorkingState }), undefined, undefined, h.ctx)).rejects.toThrow("pinnedWorkingState");
+      expect(retirementCounts(h)).toEqual(before);
+    });
+
+    it("preserves an exact 2000-character multiline pin, redacts egress, and projects one dedicated block", async () => {
+      const manager = SessionManager.inMemory();
+      manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any);
+      const h = extensionHarness(manager); const pin = "token=pinSecret\n" + "x".repeat(1_984);
+      await h.retire.execute("pin", await inspectAnchor(h, "ep-1", { pinnedWorkingState: pin }), undefined, undefined, h.ctx);
+      const receipt: any = h.appended[0];
+      expect(receipt).toMatchObject({ version: 5, pinnedWorkingState: pin, capsule });
+      const request = mockStreamSimple.mock.calls[0][1].messages[0].content[0].text;
+      expect(request).toMatch(/PINNED WORKING STATE[\s\S]*REDACTED/);
+      expect(request).toMatch(/complementary[\s\S]*non-duplicative[\s\S]*no pinned field/i);
+      expect(request).not.toContain("token=pinSecret");
+      expect(Object.keys(JSON.parse(mockStreamSimple.mock.calls[0][1].messages[0].content[0].text.slice(request.indexOf("{"))))).not.toContain("pinnedWorkingState");
+      const event = { messages: manager.buildSessionContext().messages };
+      const projected = await h.handlers.context(event, h.ctx);
+      expect((JSON.stringify(projected.messages).match(/PINNED WORKING STATE/g) ?? [])).toHaveLength(1);
+      expect(projected.messages.flatMap((message: any) => Array.isArray(message.content) ? message.content.map((part: any) => part.text ?? "") : [message.content]).join("\n")).toContain(pin);
+    });
+
+    it("fails closed for unknown, replaced, consumed, and stale witness authority; retry remains valid before append", async () => {
+      const make = () => { const manager = SessionManager.inMemory(); manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any); return { manager, h: extensionHarness(manager) }; };
+      for (const mutate of [
+        async (_manager: SessionManager, h: any, params: any) => ({ ...params, inspectionWitness: "unknown" }),
+        async (_manager: SessionManager, h: any, params: any) => { await h.inspect.execute("replace", {}, undefined, undefined, h.ctx); return params; },
+        async (manager: SessionManager, _h: any, params: any) => { manager.appendMessage(user("ignored", "new root").message as any); return params; },
+        async (manager: SessionManager, _h: any, params: any) => { (manager.getEntries()[0] as any).message.content = [{ type: "text", text: "changed" }]; return params; },
+      ]) {
+        const { manager, h } = make(); const params = await mutate(manager, h, await inspectAnchor(h)); const before = retirementCounts(h);
+        await expect(h.retire.execute("authority", params, undefined, undefined, h.ctx)).rejects.toThrow(/witness|authority|stale/i);
+        expect(retirementCounts(h)).toEqual(before);
+      }
+      const { manager, h } = make(); const fresh = await inspectAnchor(h);
+      manager.appendMessage(assistant("ignored", "post-root").message as any); manager.appendMessage(tool("ignored", "post-root-call").message as any);
+      await h.retire.execute("fresh", fresh, undefined, undefined, h.ctx);
+      await expect(h.retire.execute("consumed", fresh, undefined, undefined, h.ctx)).rejects.toThrow(/witness|consumed|authority/i);
+      const retryCase = make();
+      const retry = await inspectAnchor(retryCase.h); mockStreamSimple.mockReturnValueOnce({ result: async () => { throw new Error("model failed"); } });
+      await expect(retryCase.h.retire.execute("fail", retry, undefined, undefined, retryCase.h.ctx)).rejects.toThrow("model failed");
+      await expect(retryCase.h.retire.execute("retry", retry, undefined, undefined, retryCase.h.ctx)).resolves.toBeDefined();
+    });
+
+    it("rejects an instance-A witness after reload into instance B before model egress or append", async () => {
+      const manager = SessionManager.inMemory();
+      manager.appendMessage(user("ignored", "settled").message as any);
+      manager.appendMessage(assistant("ignored", "done").message as any);
+      manager.appendMessage(user("ignored", "active").message as any);
+      const instanceA = extensionHarness(manager);
+      const params = await inspectAnchor(instanceA);
+      const instanceB = extensionHarness(manager);
+      const before = retirementCounts(instanceB);
+      await expect(instanceB.retire.execute("reloaded", params, undefined, undefined, instanceB.ctx)).rejects.toThrow(/witness|authority/i);
+      expect(retirementCounts(instanceB)).toEqual(before);
+    });
+
+    it.each([
+      ["initial", "ep-1", async () => { const manager = SessionManager.inMemory(); manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any); return { h: extensionHarness(manager), provenance: [] }; }],
+      ["forward", "ep-1", async () => ({ ...(await anchoredRelationFixture()), provenance: ["parentReceiptEntryId", "newlyCompletedEpisodeEntries"] })],
+      ["recompose", "ep-2", async () => ({ ...(await anchoredRelationFixture()), provenance: ["parentReceiptEntryId", "newlyIncorporatedBeforeParentEntries", "newlyCompletedAfterParentEntries", "compositionMetrics"] })],
+      ["deepen", "ep-3", async () => ({ ...(await anchoredRelationFixture()), provenance: ["parentReceiptEntryId", "newlyIncorporatedBeforeParentEntries", "newlyCompletedAfterParentEntries", "compositionMetrics"] })],
+    ])("writes strict V5 %s receipt with original pin and applicable provenance", async (mode, anchor, setup) => {
+      const { h, provenance } = await setup();
+      await h.retire.execute("v5", await inspectAnchor(h, anchor), undefined, undefined, h.ctx);
+      const receipt: any = h.appended.at(-1);
+      expect(receipt).toMatchObject({ version: 5, mode, pinnedWorkingState: "verified finding\nunresolved dependency", capsule });
+      for (const key of provenance) expect(receipt).toHaveProperty(key);
+    });
+
+    it("keeps V1–V4 pin-free and makes mixed V2→V5 and V4→V5 projection latest-only with cumulative recall", async () => {
+      const legacy: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: [], activeUserEntryId: "u2", capsule, provider: "google", model: "x", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+      expect(JSON.stringify(legacy)).not.toContain("pinnedWorkingState");
+      const fixture = await generation2Fixture();
+      await fixture.h.retire.execute("v5", await inspectAnchor(fixture.h, "ep-1", { pinnedWorkingState: "latest pin" }), undefined, undefined, fixture.h.ctx);
+      const event = { messages: fixture.manager.buildSessionContext().messages };
+      const projected = await fixture.h.handlers.context(event, fixture.h.ctx);
+      expect((JSON.stringify(projected.messages).match(/PINNED WORKING STATE/g) ?? [])).toHaveLength(1);
+      expect(JSON.stringify(projected.messages)).toContain("latest pin");
+      const v2Receipt: any = fixture.h.appended.at(-1);
+      const v2Inventory: any = await fixture.h.recall.execute("inventory", {}, undefined, undefined, fixture.h.ctx);
+      expect(v2Inventory.details.sourceEntryIds).toEqual(v2Receipt.sourceEntryIds);
+      const v2Raw: any = await fixture.h.recall.execute("raw", { sourceEntryId: v2Receipt.sourceEntryIds[0] }, undefined, undefined, fixture.h.ctx);
+      const v2Entry: any = fixture.manager.getEntries().find((entry: any) => entry.id === v2Receipt.sourceEntryIds[0]);
+      expect(JSON.parse(v2Raw.content[0].text)).toEqual({ id: v2Receipt.sourceEntryIds[0], message: v2Entry.message });
+      const v4 = await latestV4Fixture();
+      v4.branch.push(assistant("a2", "done"), user("u3", "active")); v4.h.ctx.sessionManager = publicSession(v4.branch);
+      await v4.h.retire.execute("v5-after-v4", await inspectAnchor(v4.h, "ep-1", { pinnedWorkingState: "V4 latest pin" }), undefined, undefined, v4.h.ctx);
+      const v4Projected = await v4.h.handlers.context({ messages: v4.branch.filter((entry: any) => entry.type === "message").map((entry: any) => entry.message) }, v4.h.ctx);
+      expect((JSON.stringify(v4Projected.messages).match(/PINNED WORKING STATE/g) ?? [])).toHaveLength(1);
+      expect(JSON.stringify(v4Projected.messages)).toContain("V4 latest pin");
+      const v4Inventory: any = await v4.h.recall.execute("inventory", {}, undefined, undefined, v4.h.ctx);
+      expect(v4Inventory.details.sourceEntryIds).toEqual(v4.h.appended.at(-1).sourceEntryIds);
+      const v4RawId = v4.h.appended.at(-1).sourceEntryIds[0];
+      await expect(v4.h.recall.execute("raw", { sourceEntryId: v4RawId }, undefined, undefined, v4.h.ctx)).resolves.toMatchObject({ details: { sourceEntryId: v4RawId } });
+    });
+
+    it("projects only the second pin and capsule in a V5→V5 chain", async () => {
+      const manager = SessionManager.inMemory();
+      manager.appendMessage(user("ignored", "first settled").message as any); manager.appendMessage(assistant("ignored", "first done").message as any); manager.appendMessage(user("ignored", "first active").message as any);
+      const h = extensionHarness(manager);
+      const firstCapsule = { ...capsule, objective: "first V5 capsule" };
+      const secondCapsule = { ...capsule, objective: "second V5 capsule" };
+      mockStreamSimple.mockReturnValueOnce({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(firstCapsule) }], usage: {} }) });
+      await h.retire.execute("first", await inspectAnchor(h, "ep-1", { pinnedWorkingState: "first pin" }), undefined, undefined, h.ctx);
+      manager.appendMessage(assistant("ignored", "first active done").message as any); manager.appendMessage(user("ignored", "second active").message as any);
+      mockStreamSimple.mockReturnValueOnce({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(secondCapsule) }], usage: {} }) });
+      await h.retire.execute("second", await inspectAnchor(h, "ep-1", { pinnedWorkingState: "second pin" }), undefined, undefined, h.ctx);
+      const projected = await h.handlers.context({ messages: manager.buildSessionContext().messages }, h.ctx);
+      const text = JSON.stringify(projected.messages);
+      expect((text.match(/PINNED WORKING STATE/g) ?? [])).toHaveLength(1);
+      expect(text).toContain("second pin"); expect(text).toContain("second V5 capsule");
+      expect(text).not.toContain("first pin"); expect(text).not.toContain("first V5 capsule");
+    });
+
+    it.each([
+      ["missing mode", (receipt: any) => { delete receipt.mode; }],
+      ["invalid mode", (receipt: any) => { receipt.mode = "invalid"; }],
+      ["missing pin", (receipt: any) => { delete receipt.pinnedWorkingState; }],
+      ["blank pin", (receipt: any) => { receipt.pinnedWorkingState = " \n"; }],
+      ["extra top-level key", (receipt: any) => { receipt.extra = true; }],
+      ["initial missing V2 provenance", (receipt: any) => { delete receipt.provider; }],
+      ["initial extra V3 provenance", (receipt: any) => { receipt.newlyCompletedEpisodeEntries = []; }],
+    ])("fails closed for strict future V5 %s", async (_name, tamper) => {
+      const { manager, h, receipt } = await futureV5Fixture();
+      const event = { messages: manager.buildSessionContext().messages };
+      expect(await h.handlers.context(event, h.ctx)).toBeDefined();
+      await expect(h.recall.execute("control", {}, undefined, undefined, h.ctx)).resolves.toBeDefined();
+      tamper(receipt);
+      const before = retirementCounts(h);
+      expect(await h.handlers.context(event, h.ctx)).toBeUndefined();
+      await expect(h.recall.execute("tampered", {}, undefined, undefined, h.ctx)).rejects.toThrow();
+      await expect(h.retire.execute("tampered", { fromEpisodeInclusive: "ep-1", inspectionWitness: "future", continuationGoal: "continue", pinnedWorkingState: "pin" }, undefined, undefined, h.ctx)).rejects.toThrow(/malformed|authority|witness/i);
+      expect(retirementCounts(h)).toEqual(before);
+    });
+  });
+
+  it("RED: retains aggregate refusal conservation, canonical source bytes, and rejects invalid cursors", async () => {
+    const manager = SessionManager.inMemory();
+    manager.appendMessage(user("x", "settled").message as any); manager.appendMessage(assistant("x", "done").message as any); manager.appendMessage(user("x", "active").message as any);
+    const h = extensionHarness(manager); const page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(page.details.evaluatedCount).toBe(page.details.acceptedCount + page.details.refusedCount);
+    expect(page.details.refusalReasons).toEqual(expect.objectContaining({ unsupportedCandidate: expect.any(Number), openToolCalls: expect.any(Number) }));
+    expect(page.details.candidates[0].sourceMessageBytes).toBe(Buffer.byteLength(JSON.stringify(manager.getEntries().slice(0, 2).map((entry: any) => entry.message)), "utf8"));
+    await expect(h.inspect.execute("bad", { cursor: "wrong" }, undefined, undefined, h.ctx)).rejects.toThrow();
   });
 
 });

@@ -68,9 +68,18 @@ function harness(
     getApiKeyAndHeaders: async () => ({ ok: true }),
     ...setup,
   };
+  const inspect = tools.find((x) => x.name === "inspect_episode_retirement");
+  const rawRetire = tools.find((x) => x.name === "retire_episodes");
+  const retire = { ...rawRetire, execute: async (id: string, params: any, signal: any, update: any, ctx: any) => {
+    if (typeof params.latestCompletedEpisodes === "number") {
+      const page = await inspect.execute("legacy-test-inspect", {}, undefined, undefined, ctx);
+      params = { fromEpisodeInclusive: `ep-${params.latestCompletedEpisodes}`, inspectionWitness: page.details.inspectionWitness, continuationGoal: params.continuationGoal, pinnedWorkingState: "legacy test pin" };
+    }
+    return rawRetire.execute(id, params, signal, update, ctx);
+  } };
   return {
-    retire: tools.find((x) => x.name === "retire_episodes"),
-    inspect: tools.find((x) => x.name === "inspect_episode_retirement"),
+    retire,
+    inspect,
     recall: tools.find((x) => x.name === "recall_episode"),
     handlers,
     appended,
@@ -159,11 +168,22 @@ describe("episode retirement failures", () => {
     expect(h.calls()).toBe(0);
   });
 
+  it("RED: omits the refused completed ordinal without renumbering partial-overlap candidates", async () => {
+    const h = harness();
+    h.branch.unshift(msg("u0", "user", "earlier"), msg("a0", "assistant", "earlier done"));
+    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u0", "a0", "u1", "a1"], sourceFingerprints: h.branch.slice(0, 4).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+    h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: parent }, msg("a2", "assistant", "done"), msg("u3", "user", "active again"));
+    h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
+    const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(result.details.candidates.map((candidate: any) => candidate.id)).toEqual(["ep-1", "ep-3"]);
+    expect(result.details.candidates.map((candidate: any) => candidate.retiresEpisodes)).toEqual([1, 3]);
+  });
+
   it("inspect reports zero accepted counts with null frontiers and no largest safe candidate", async () => {
     const h = harness();
     h.branch[0].message!.content = [{ type: "image", data: "x" }] as any;
     const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
-    expect(result.details).toEqual({
+    expect(result.details).toMatchObject({
       evaluatedCount: 1, acceptedCount: 0, refusedCount: 1,
       relationFrontier: { initial: null, forward: null, recompose: null, deepen: null },
       largestSafe: null,
@@ -188,7 +208,7 @@ describe("episode retirement failures", () => {
   it("a V1 parent refuses V4 when it has no completed after-parent interval", async () => {
     const h = harness();
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
-    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("V4 requires a completed after-parent interval");
+    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("inspection witness authority is unavailable");
     expect(h.calls()).toBe(0);
     expect(h.appended).toHaveLength(0);
   });
@@ -202,17 +222,17 @@ describe("episode retirement failures", () => {
     h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; };
     h.ctx.modelRegistry.getApiKeyAndHeaders = async () => { auths++; return { ok: true }; };
     await h.retire.execute("x", { latestCompletedEpisodes: 2, continuationGoal: "go" }, undefined, undefined, h.ctx);
-    expect(finds).toBe(1); expect(auths).toBe(1); expect(h.calls()).toBe(1); expect((h.appended[0] as any).version).toBe(4);
+    expect(finds).toBe(1); expect(auths).toBe(1); expect(h.calls()).toBe(1); expect((h.appended[0] as any)).toMatchObject({ version: 5, mode: "recompose" });
   });
 
-  it("uses raw cumulative slots for a V1 parent's V4 generation-2 metrics", async () => {
+  it("uses raw cumulative slots for a V1 parent's V5 generation-2 metrics", async () => {
     const h = harness();
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
     h.branch.push(msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     await h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx);
     const receipt: any = h.appended[0];
-    expect(receipt).toMatchObject({ version: 4, generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"] });
+    expect(receipt).toMatchObject({ version: 5, mode: "recompose", generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"] });
     expect(receipt.replacementMetrics.completedEpisodeCount).toBe(2);
   });
 
@@ -223,7 +243,7 @@ describe("episode retirement failures", () => {
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     await h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx);
     const receipt: any = h.appended[0];
-    expect(receipt).toMatchObject({ version: 3, generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"], replacementMetrics: { completedEpisodeCount: 2, sourceMessageCount: 4 } });
+    expect(receipt).toMatchObject({ version: 5, mode: "forward", generation: 2, sourceEntryIds: ["u1", "a1", "u2", "a2"], replacementMetrics: { completedEpisodeCount: 2, sourceMessageCount: 4 } });
     expect(receipt.parentReceiptFingerprint).toBe(createHash("sha256").update(JSON.stringify(parent)).digest("hex"));
     expect(receipt.priorCapsuleFingerprint).toBe(createHash("sha256").update(JSON.stringify(parent.capsule)).digest("hex"));
   });

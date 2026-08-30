@@ -151,3 +151,15 @@ Do not compare aggregate arm cost: copied arms retained the same session header 
 ## Cheapest next test
 
 Produce ephemeral, non-repeatable bulky tool output whose surprise detail is available only in stored history. Give vague retirement permission, then ask for the omitted detail and observe whether recall is discovered. Run it paired with fresh distinct session IDs or order-balanced runs; do not reuse copied session headers.
+
+## Anchored retirement / V5 update
+
+**Automated implementation verified (C3); live user verification pending.** The historical V0/V2/V3/V4 evidence, paths, measurements, caveats, failures, and next-test text above are preserved as dated historical evidence.
+
+The public retirement API is anchored rather than scalar: before every retirement, the active agent calls `inspect_episode_retirement`, pages as needed, selects the witness-scoped `fromEpisodeInclusive` oldest included completed episode, supplies `inspectionWitness`, independently authors `continuationGoal`, and independently writes the smallest critical non-blank `pinnedWorkingState` (<=2000 characters). Active work is excluded. Cursorless inspection evaluates all counts, while cursor calls page one immutable in-memory grant. Both complete provider-content and details envelopes are <=2048 UTF-8 bytes. `sourceMessageBytes` is non-pretty `JSON.stringify(selectedProviderMessages)` UTF-8 length, never reclaimed bytes.
+
+A grant binds the active-root canonical resolved snapshot and shared preflight. Reload, a replacement inspect, a new user root, or a changed prefix invalidates it; later active-only traffic does not. Validation occurs before model lookup, authentication, streaming, or append. A model/pre-append failure preserves the grant; append alone consumes it.
+
+Every new receipt is a strict discriminated V5 `initial`, `forward`, `recompose`, or `deepen` receipt with the original pin and exact mode-specific keys. V1–V4 remain unchanged historical reader formats. The extension stores and projects the exact pin once with only the latest capsule; recall remains cumulative raw provenance. The secondary model receives default-redacted pin guidance and returns complementary five-key capsule state; it does not choose the anchor, goal, or pin. Retirement remains default-off and its stable configured model default remains `google/gemini-3.7-flash` at `medium`.
+
+Required remaining live user verification: verify the exact pin projection, inspect/page/anchor flow, and V1–V4 compatibility in a live Pi session.
