@@ -572,7 +572,7 @@ describe("episode retirement", () => {
     expect(compact.text).toContain("1 completed episode(s), 6 source message(s)");
     expect(compact.text).toContain("B serialized source →");
     expect(compact.text).toContain("B capsule-text");
-    expect(compact.text).toContain("LLM: input 1091 · output 336 · reasoning 171 · cache read 0 · cache write 0 · total 1427 · $0.00207825");
+    expect(compact.text).toContain("LLM: input 1091 · output 336 · reasoning 171 · cache read 0 · cache write 0 · total 1427 · $0.00");
     expect(compact.text).not.toContain(expectedCapsuleText);
     expect(compact.text).not.toContain("u1, a1, t1, a2, t2, a3");
     expect(expanded.text).toContain(expectedCapsuleText);

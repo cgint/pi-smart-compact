@@ -933,7 +933,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
         typeof usage[key] === "number" ? [`${label} ${usage[key]}`] : []
       ).concat(
         isRecord(usage.cost) && typeof usage.cost.total === "number"
-          ? [`$${usage.cost.total}`]
+          ? [`$${usage.cost.total.toFixed(2)}`]
           : [],
       ).join(" · ");
       const generation = receipt.version === 3 || receipt.version === 5 && receipt.mode === "forward" ? `generation ${receipt.generation}; this retirement: ${receipt.deltaMetrics.newlyCompletedEpisodeCount} episode(s), ${receipt.deltaMetrics.newlyCompletedMessageCount} message(s), ${receipt.deltaMetrics.newlyCompletedSourceBytes} B source → ${receipt.deltaMetrics.newCapsuleTextBytes} B capsule-text` : receipt.version === 4 || receipt.version === 5 && (receipt.mode === "recompose" || receipt.mode === "deepen") ? `generation ${receipt.generation}; earlier additions: ${receipt.compositionMetrics.earlierEpisodeCount} episode(s), ${receipt.compositionMetrics.earlierMessageCount} message(s), ${receipt.compositionMetrics.earlierSourceBytes} B; later additions: ${receipt.compositionMetrics.laterEpisodeCount} episode(s), ${receipt.compositionMetrics.laterMessageCount} message(s), ${receipt.compositionMetrics.laterSourceBytes} B; cumulative ${receipt.compositionMetrics.cumulativeMessageCount} message(s), ${receipt.compositionMetrics.cumulativeSourceBytes} B source → ${receipt.compositionMetrics.newCapsuleTextBytes} B capsule-text` : "generation 1";
