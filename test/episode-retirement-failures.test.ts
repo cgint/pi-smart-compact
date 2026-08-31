@@ -135,6 +135,37 @@ describe("episode retirement failures", () => {
     expect(h.appended).toHaveLength(0);
   });
 
+  it.each([
+    ["unissued id", "ep-42"],
+    ["user prompt preview", "settled"],
+  ])("unknown anchor %s is refused distinctly before egress", async (_name, anchor) => {
+    const h = harness();
+    const page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    await expect(
+      h.retire.execute(
+        "x",
+        {
+          fromEpisodeInclusive: anchor,
+          inspectionWitness: page.details.inspectionWitness,
+          continuationGoal: "go",
+          pinnedWorkingState: "pin",
+        },
+        undefined,
+        undefined,
+        h.ctx,
+      ),
+    ).rejects.toThrow("unknown episode anchor");
+    expect(h.calls()).toBe(0);
+    expect(h.appended).toHaveLength(0);
+  });
+
+  it("inspect pages carry a retireWith usage hint naming the candidate id", async () => {
+    const h = harness();
+    const page = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
+    expect(page.details.retireWith).toContain("fromEpisodeInclusive");
+    expect(page.details.retireWith).toContain("ep-");
+  });
+
   it("inspect reports a partial parent overlap as refused", async () => {
     const h = harness();
     h.branch.unshift(msg("u0", "user", "earlier"), msg("a0", "assistant", "earlier done"));
@@ -208,7 +239,7 @@ describe("episode retirement failures", () => {
   it("a V1 parent refuses V4 when it has no completed after-parent interval", async () => {
     const h = harness();
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: { version: 1, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good } });
-    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("inspection witness authority is unavailable");
+    await expect(h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx)).rejects.toThrow("unknown episode anchor");
     expect(h.calls()).toBe(0);
     expect(h.appended).toHaveLength(0);
   });

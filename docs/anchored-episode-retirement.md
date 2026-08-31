@@ -3,7 +3,7 @@
 ## Status
 **Automated implementation verified (C3); live user verification pending.**
 
-Anchored retirement preserves the engine’s newest-suffix selection. `fromEpisodeInclusive` identifies the oldest included completed episode; active work is never selected.
+Anchored retirement preserves the engine’s newest-suffix selection. The `fromEpisodeInclusive` value is the candidate id (`ep-N`) of the oldest included completed episode; active work is never selected.
 
 ## Diagram
 ![Anchored Episode Retirement Flow](./anchored-episode-retirement.svg)

@@ -794,6 +794,7 @@ function inspectionPage(grant: InspectionGrant, start: number): { content: Array
   const base = {
     inspectionWitness: grant.witness,
     activeEpisode: grant.activeEpisode,
+    retireWith: "call retire_episodes with fromEpisodeInclusive set to a candidate id (e.g. \"ep-2\"), this inspectionWitness, your continuationGoal, and your pinnedWorkingState",
     evaluatedCount: grant.evaluatedCount,
     acceptedCount: grant.acceptedCount,
     refusedCount: grant.refusedCount,
@@ -821,7 +822,7 @@ function inspectionPage(grant: InspectionGrant, start: number): { content: Array
 }
 
 const retireSchema = Type.Object({
-  fromEpisodeInclusive: Type.String({ minLength: 1, description: "Witness-scoped oldest included completed episode anchor; it and every newer completed episode are retired." }),
+  fromEpisodeInclusive: Type.String({ minLength: 1, description: "Candidate id from the current inspect_episode_retirement result (e.g. \"ep-4\"); it names the oldest included completed episode, and every newer completed episode is retired. Use the candidate's id field, never its userPrompt text." }),
   inspectionWitness: Type.String({ minLength: 1, description: "Opaque authority returned by the current inspect_episode_retirement call." }),
   continuationGoal: Type.String({ minLength: 1, maxLength: CONTINUATION_GOAL_MAX_CHARS, description: "Non-blank continuation objective for the capsule model; the active agent authors it." }),
   pinnedWorkingState: Type.String({ maxLength: 2_000, description: "Required non-blank <=2000-character critical state, independently authored by the active agent and persisted unchanged by this extension." }),
@@ -906,7 +907,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "retire_episodes",
     label: "retire episodes",
-    description: "Before every retirement call, inspect_episode_retirement and page as needed. Independently choose fromEpisodeInclusive as the oldest included completed episode, author continuationGoal and pinnedWorkingState, then provide the inspectionWitness. The capsule model does not decide the boundary, goal, or pin. Never include active work.",
+    description: "Before every retirement call, inspect_episode_retirement and page as needed. Independently choose fromEpisodeInclusive as the candidate id (ep-N) of the oldest included completed episode, author continuationGoal and pinnedWorkingState, then provide the inspectionWitness. The capsule model does not decide the boundary, goal, or pin. Never include active work.",
     parameters: retireSchema,
     executionMode: "sequential",
     renderResult(result, { expanded, isPartial }, theme, context) {
@@ -949,7 +950,7 @@ export default function registerEpisodeRetirement(pi: ExtensionAPI): void {
       if (typeof params.pinnedWorkingState !== "string" || !params.pinnedWorkingState.trim() || params.pinnedWorkingState.length > 2_000) throw new Error("Episode retirement requires a non-empty bounded pinnedWorkingState.");
       if (!inspectionGrant || params.inspectionWitness !== inspectionGrant.witness) throw new Error("Episode retirement refused: inspection witness authority is unavailable.");
       const binding = inspectionGrant.bindings.get(params.fromEpisodeInclusive);
-      if (!binding) throw new Error("Episode retirement refused: inspection witness authority is unavailable.");
+      if (!binding) throw new Error(`Episode retirement refused: unknown episode anchor ${JSON.stringify(params.fromEpisodeInclusive)}; fromEpisodeInclusive must be a candidate id (e.g. "ep-2") from the current inspect_episode_retirement result.`);
       const contextEntries = resolvedSlots(ctx.sessionManager);
       const activeRoot = contextEntries.filter((entry) => entry.type === "message" && entry.message?.role === "user").at(-1);
       if (!activeRoot || activeRoot.id !== inspectionGrant.activeUserEntryId || activeRootDigest(contextEntries, activeRoot.id) !== inspectionGrant.digest) throw new Error("Episode retirement refused: inspection witness authority is stale.");

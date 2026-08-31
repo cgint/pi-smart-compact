@@ -724,7 +724,7 @@ describe("episode retirement", () => {
     refusedManager.appendMessage(user("ignored", "active").message as any);
     const refused = extensionHarness(refusedManager);
     const streamsBeforeRefusal = refused.streams();
-    await expect(refused.retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, refused.ctx)).rejects.toThrow("inspection witness authority is unavailable");
+    await expect(refused.retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, refused.ctx)).rejects.toThrow("unknown episode anchor");
     expect(refused.streams()).toBe(streamsBeforeRefusal);
     expect(refused.appended).toHaveLength(0);
   });
