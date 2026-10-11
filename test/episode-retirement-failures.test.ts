@@ -61,7 +61,7 @@ function harness(
     appendEntry: (_: string, x: unknown) => appended.push(x),
   };
   registerEpisodeRetirement(pi);
-  const model = { provider: "google", id: "gemini-3.7-flash" };
+  const model = { provider: "google", id: "gemini-3.8-flash" };
   stream.mockImplementation(() => ({ result: async () => response }));
   const registry = {
     find: () => model,
@@ -169,7 +169,7 @@ describe("episode retirement failures", () => {
   it("inspect reports a partial parent overlap as refused", async () => {
     const h = harness();
     h.branch.unshift(msg("u0", "user", "earlier"), msg("a0", "assistant", "earlier done"));
-    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u0", "a0", "u1", "a1"], sourceFingerprints: h.branch.slice(0, 4).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u0", "a0", "u1", "a1"], sourceFingerprints: h.branch.slice(0, 4).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.8-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: parent }, msg("a2", "assistant", "done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
@@ -202,7 +202,7 @@ describe("episode retirement failures", () => {
   it("RED: omits the refused completed ordinal without renumbering partial-overlap candidates", async () => {
     const h = harness();
     h.branch.unshift(msg("u0", "user", "earlier"), msg("a0", "assistant", "earlier done"));
-    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u0", "a0", "u1", "a1"], sourceFingerprints: h.branch.slice(0, 4).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u0", "a0", "u1", "a1"], sourceFingerprints: h.branch.slice(0, 4).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.8-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r", parentId: "u2", timestamp: "r", data: parent }, msg("a2", "assistant", "done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     const result = await h.inspect.execute("inspect", {}, undefined, undefined, h.ctx);
@@ -250,7 +250,7 @@ describe("episode retirement failures", () => {
     h.branch.push(msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     let finds = 0, auths = 0;
-    h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; };
+    h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; };
     h.ctx.modelRegistry.getApiKeyAndHeaders = async () => { auths++; return { ok: true }; };
     await h.retire.execute("x", { latestCompletedEpisodes: 2, continuationGoal: "go" }, undefined, undefined, h.ctx);
     expect(finds).toBe(1); expect(auths).toBe(1); expect(h.calls()).toBe(1); expect((h.appended[0] as any)).toMatchObject({ version: 5, mode: "recompose" });
@@ -269,7 +269,7 @@ describe("episode retirement failures", () => {
 
   it("uses a V2 parent to create generation 2 with cumulative totals and hashes", async () => {
     const h = harness();
-    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
+    const parent: any = { version: 2, kind: "episode-retirement", sourceEntryIds: ["u1", "a1"], sourceFingerprints: h.branch.slice(0, 2).map(fingerprintEntry), activeUserEntryId: "u2", capsule: good, provider: "google", model: "gemini-3.8-flash", reasoningEffort: "medium", promptVersion: "capsule-v2", usage: {} };
     h.branch.push({ type: "custom", customType: "episode-retirement", id: "r1", parentId: "u2", timestamp: "r1", data: parent }, msg("a2", "assistant", "second done"), msg("u3", "user", "active again"));
     h.branch.forEach((entry, index) => { entry.parentId = index ? h.branch[index - 1].id : null; });
     await h.retire.execute("x", { latestCompletedEpisodes: 1, continuationGoal: "go" }, undefined, undefined, h.ctx);
@@ -375,7 +375,7 @@ describe("episode retirement failures", () => {
         activeUserEntryId: "u2",
         capsule: good,
         provider: "google",
-        model: "gemini-3.7-flash",
+        model: "gemini-3.8-flash",
         reasoningEffort: "medium",
         promptVersion: "capsule-v2",
         usage: { totalTokens: 7, cost: { total: 0.02 } },
@@ -405,7 +405,7 @@ describe("episode retirement failures", () => {
         activeUserEntryId: "u2",
         capsule: good,
         provider: "google",
-        model: "gemini-3.7-flash",
+        model: "gemini-3.8-flash",
         reasoningEffort: "medium",
         promptVersion: "capsule-v2",
         usage: {},

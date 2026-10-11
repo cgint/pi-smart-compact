@@ -78,7 +78,7 @@ const extensionHarness = (manager: SessionManager) => {
   return {
     retire, inspect, recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
     streams: () => mockStreamSimple.mock.calls.length, finds: () => finds, auths: () => auths,
-    ctx: { sessionManager: manager, modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
+    ctx: { sessionManager: manager, modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
   };
 };
 
@@ -109,7 +109,7 @@ async function futureV5Fixture() {
   const manager = SessionManager.inMemory();
   manager.appendMessage(user("ignored", "settled").message as any); manager.appendMessage(assistant("ignored", "done").message as any); manager.appendMessage(user("ignored", "active").message as any);
   const source = manager.getEntries().slice(0, 2) as SessionLikeEntry[];
-  const receipt: any = { version: 5, kind: "episode-retirement", sourceEntryIds: source.map((entry) => entry.id), sourceFingerprints: source.map(fingerprintEntry), activeUserEntryId: manager.getEntries()[2].id, capsule, replacementMetrics: { completedEpisodeCount: 1, sourceMessageCount: 2, sourceMessageBytes: Buffer.byteLength(JSON.stringify(source.map((entry) => entry.message)), "utf8"), capsuleTextBytes: 1 }, provider: "google", model: "gemini-3.7-flash", reasoningEffort: "medium", promptVersion: "capsule-v5", usage: {}, mode: "initial", pinnedWorkingState: "valid pin" };
+  const receipt: any = { version: 5, kind: "episode-retirement", sourceEntryIds: source.map((entry) => entry.id), sourceFingerprints: source.map(fingerprintEntry), activeUserEntryId: manager.getEntries()[2].id, capsule, replacementMetrics: { completedEpisodeCount: 1, sourceMessageCount: 2, sourceMessageBytes: Buffer.byteLength(JSON.stringify(source.map((entry) => entry.message)), "utf8"), capsuleTextBytes: 1 }, provider: "google", model: "gemini-3.8-flash", reasoningEffort: "medium", promptVersion: "capsule-v5", usage: {}, mode: "initial", pinnedWorkingState: "valid pin" };
   manager.appendCustomEntry("episode-retirement", receipt);
   return { manager, h: extensionHarness(manager), receipt };
 }
@@ -150,7 +150,7 @@ async function latestV4Fixture() {
   const h: any = {
     retire: anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")), inspect: tools.find((tool) => tool.name === "inspect_episode_retirement"), recall: tools.find((tool) => tool.name === "recall_episode"), handlers, appended,
     streams: () => mockStreamSimple.mock.calls.length, finds: () => finds, auths: () => auths,
-    ctx: { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
+    ctx: { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } },
   };
   await h.retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, h.ctx);
   branch.push(assistant("a1", "first done"), user("u2", "second active")); h.ctx.sessionManager = publicSession(branch);
@@ -276,7 +276,7 @@ describe("episode retirement", () => {
     registerEpisodeRetirement(pi);
     const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement"));
     const recall = tools.find((tool) => tool.name === "recall_episode");
-    const model = { provider: "google", id: "gemini-3.7-flash" };
+    const model = { provider: "google", id: "gemini-3.8-flash" };
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: { totalTokens: 1 } }) });
     const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => model, getApiKeyAndHeaders: async () => ({ ok: true }) } };
     const accepted = await retire.execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue safely" }, undefined, undefined, ctx);
@@ -312,7 +312,7 @@ describe("episode retirement", () => {
     const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement"));
     const recall = tools.find((tool) => tool.name === "recall_episode");
     const rawManager = publicSession(branch);
-    const ctx: any = { sessionManager: { ...rawManager, getEntries: () => branch, buildContextEntries: () => branch.filter((entry) => entry.type === "message"), getLeafId: () => branch.at(-1)?.id ?? null }, modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) } };
+    const ctx: any = { sessionManager: { ...rawManager, getEntries: () => branch, buildContextEntries: () => branch.filter((entry) => entry.type === "message"), getLeafId: () => branch.at(-1)?.id ?? null }, modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.8-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) } };
     await retire.execute("one", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
     branch.push(assistant("a2", "second done"), user("u3", "third"));
     publicSession(branch);
@@ -520,7 +520,7 @@ describe("episode retirement", () => {
     ((branch[0].message!.content as Array<{ text: string }>)[0]).text = "OPENAI_API_KEY=sk-proj-selectedSecret Authorization: Bearer ghp_branchSecret";
     const originalFingerprint = fingerprintEntry(branch[0]);
     const originalText = (branch[0].message!.content as Array<{ text: string }>)[0].text;
-    const model = { provider: "openrouter", id: "google/gemini-3.7-flash" };
+    const model = { provider: "openrouter", id: "google/gemini-3.8-flash" };
     mockStreamSimple.mockImplementation((_model: unknown, context: any, options: any) => {
       expect(_model).toBe(model);
       expect(options.reasoning).toBe("high");
@@ -541,7 +541,7 @@ describe("episode retirement", () => {
     });
     const pi: any = { registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: (_type: string, data: unknown) => { persisted.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: "receipt", parentId: "u2", timestamp: "receipt-ts", data }); } };
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true";
-    process.env.PI_EPISODE_RETIREMENT_MODEL = "openrouter/google/gemini-3.7-flash";
+    process.env.PI_EPISODE_RETIREMENT_MODEL = "openrouter/google/gemini-3.8-flash";
     process.env.PI_EPISODE_RETIREMENT_REASONING_EFFORT = "high";
     registerEpisodeRetirement(pi);
     const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement"));
@@ -554,7 +554,7 @@ describe("episode retirement", () => {
     expect(result.content).toEqual([{ type: "text", text: "Selected completed episodes were retired into a continuation capsule." }]);
     expect(JSON.stringify(result.content)).not.toContain("CONTINUATION CAPSULE");
     expect(JSON.stringify(result.content)).not.toContain("u1");
-    expect(persisted[0]).toEqual(expect.objectContaining({ version: 5, mode: "initial", provider: "openrouter", model: "google/gemini-3.7-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 1427 }) }));
+    expect(persisted[0]).toEqual(expect.objectContaining({ version: 5, mode: "initial", provider: "openrouter", model: "google/gemini-3.8-flash", reasoningEffort: "high", usage: expect.objectContaining({ totalTokens: 1427 }) }));
     const receipt = persisted[0] as EpisodeRetirementReceipt;
     const expectedCapsuleText = "[CONTINUATION CAPSULE — episode retirement]\nObjective: finish\nFindings:\n- done\nNext step: ship\nOriginal source entry IDs (recover with recall_episode): u1, a1, t1, a2, t2, a3";
     expect(receipt.replacementMetrics).toEqual({
@@ -604,7 +604,7 @@ describe("episode retirement", () => {
         ...manager,
         getBranch: () => raw,
       },
-      modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.7-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) },
+      modelRegistry: { find: () => ({ provider: "google", id: "gemini-3.8-flash" }), getApiKeyAndHeaders: async () => ({ ok: true }) },
     };
     const result = await anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")).execute("call", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
     expect(result.isError).toBeUndefined();
@@ -774,7 +774,7 @@ describe("episode retirement", () => {
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
     registerEpisodeRetirement(pi);
     const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")), recall = tools.find((tool) => tool.name === "recall_episode");
-    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
     await retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
     branch.push(assistant("a1", "retirement assessment complete"), user("u2", "recompose all")); ctx.sessionManager = publicSession(branch);
     await retire.execute("v4", { latestCompletedEpisodes: 3, continuationGoal: "recompose" }, undefined, undefined, ctx);
@@ -806,7 +806,7 @@ describe("episode retirement", () => {
     const pi: any = { registerTool: (tool: any) => tools.push(tool), on: (name: string, handler: any) => { handlers[name] = handler; }, appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); } };
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true"; registerEpisodeRetirement(pi);
     const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")), recall = tools.find((tool) => tool.name === "recall_episode");
-    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
     await retire.execute("v2", { latestCompletedEpisodes: 1, continuationGoal: "continue" }, undefined, undefined, ctx);
     const priorEvent = { messages: branch.filter((entry) => entry.type === "message").map((entry) => entry.message) };
@@ -828,7 +828,7 @@ describe("episode retirement", () => {
     const pi: any = { registerTool: (tool: any) => tools.push(tool), on: () => {}, appendEntry: (_: string, data: any) => { appended.push(data); branch.push({ type: "custom", customType: "episode-retirement", id: `r${appended.length}`, parentId: branch.at(-1)!.id, timestamp: "t", data }); publicSession(branch); } };
     process.env.PI_EPISODE_RETIREMENT_ENABLED = "true"; registerEpisodeRetirement(pi);
     mockStreamSimple.mockReturnValue({ result: async () => ({ stopReason: "stop", content: [{ type: "text", text: JSON.stringify(capsule) }], usage: {} }) });
-    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")); const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
+    const retire = anchoredRetire(tools.find((tool) => tool.name === "retire_episodes"), tools.find((tool) => tool.name === "inspect_episode_retirement")); const ctx: any = { sessionManager: publicSession(branch), modelRegistry: { find: () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; }, getApiKeyAndHeaders: async () => { auths++; return { ok: true }; } } };
     await retire.execute("v2", { latestCompletedEpisodes: 2, continuationGoal: "continue" }, undefined, undefined, ctx);
     branch.push(assistant("aC", "C done"), user("uD", "D active")); ctx.sessionManager = publicSession(branch);
     const streams = mockStreamSimple.mock.calls.length;
@@ -838,7 +838,7 @@ describe("episode retirement", () => {
 
   it("refuses a gapped after-parent interval before capsule egress", async () => {
     const fixture = await generation2Fixture(); let finds = 0, auths = 0;
-    fixture.h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.7-flash" }; };
+    fixture.h.ctx.modelRegistry.find = () => { finds++; return { provider: "google", id: "gemini-3.8-flash" }; };
     fixture.h.ctx.modelRegistry.getApiKeyAndHeaders = async () => { auths++; return { ok: true }; };
     fixture.manager.appendMessage(assistant("ignored", "third done").message as any);
     fixture.manager.appendMessage(user("ignored", "fourth").message as any);

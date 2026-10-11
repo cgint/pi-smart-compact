@@ -35,7 +35,7 @@ Episode retirement remains off by default. Enable it with `PI_EPISODE_RETIREMENT
 Use the native `/retire` prompt template, or `/retire Continue with Shuttle workload planning and the target-host pivot.` to add optional continuation emphasis. It expands into a normal user turn. Optional text says only what should remain salient or happen next, never a boundary, goal, or count. Inspection returns newest-first candidates with mechanically extracted bounded prompt previews and candidate facts, plus an opaque witness, without model/auth/append work; each complete provider-content and details envelope is <=2048 UTF-8 bytes. `sourceMessageBytes` is the UTF-8 byte length of non-pretty `JSON.stringify(selectedProviderMessages)`, not bytes freed.
 
 ```bash
-export PI_EPISODE_RETIREMENT_MODEL=google/gemini-3.7-flash
+export PI_EPISODE_RETIREMENT_MODEL=google/gemini-3.8-flash
 export PI_EPISODE_RETIREMENT_REASONING_EFFORT=medium
 ```
 

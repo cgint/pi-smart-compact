@@ -641,7 +641,7 @@ function isCapsule(value: unknown): value is ContinuationCapsule {
     validItems(value.unresolved);
 }
 export function parseCapsuleModel(
-  value = process.env[MODEL_VAR] ?? "google/gemini-3.7-flash",
+  value = process.env[MODEL_VAR] ?? "google/gemini-3.8-flash",
 ): { provider: string; model: string } {
   if (value !== value.trim()) {
     throw new Error(

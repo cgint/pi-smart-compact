@@ -56,7 +56,7 @@ export default function register(pi: ExtensionAPI): void {
     const { messagesToSummarize, turnPrefixMessages, firstKeptEntryId, previousSummary, tokensBefore } = preparation;
 
     // Prefer a cheap/fast model for summarization; fall back to current model
-    const summaryModel = ctx.modelRegistry.find("google", "gemini-3.5-flash") ?? ctx.model;
+    const summaryModel = ctx.modelRegistry.find("google", "gemini-3.8-flash") ?? ctx.model;
     if (!summaryModel) {
       console.warn(`${LOG_PREFIX} No model available for summarization, falling back to Pi's default`);
       return;
