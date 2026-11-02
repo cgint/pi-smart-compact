@@ -4,7 +4,7 @@ Pi extension that replaces built-in compaction with a smarter prompt-driven summ
 
 ## How it works
 
-Intercepts Pi's `session_before_compact` event and generates a summary using a custom prompt optimized for behavioral resumption — preserving decisions, blockers, active work state, and specific error details. Uses Gemini Flash by default (cheaper/faster), falls back to the session's current model.
+Intercepts Pi's `session_before_compact` event and generates a summary using a custom prompt optimized for behavioral resumption — preserving decisions, blockers, active work state, and specific error details. Summarizes with a Gemini Flash model (the model ID is hard-coded in `src/smart-compact.ts`; there is no env var for it) and falls back to the session's current model if that model is unavailable.
 
 Graceful degradation: if the LLM call fails, Pi's built-in compaction runs instead.
 
@@ -35,11 +35,13 @@ Episode retirement remains off by default. Enable it with `PI_EPISODE_RETIREMENT
 Use the native `/retire` prompt template, or `/retire Continue with Shuttle workload planning and the target-host pivot.` to add optional continuation emphasis. It expands into a normal user turn. Optional text says only what should remain salient or happen next, never a boundary, goal, or count. Inspection returns newest-first candidates with mechanically extracted bounded prompt previews and candidate facts, plus an opaque witness, without model/auth/append work; each complete provider-content and details envelope is <=2048 UTF-8 bytes. `sourceMessageBytes` is the UTF-8 byte length of non-pretty `JSON.stringify(selectedProviderMessages)`, not bytes freed.
 
 ```bash
-export PI_EPISODE_RETIREMENT_MODEL=google/gemini-3.8-flash
+# PLACEHOLDER: replace the quoted <provider>/<model> with a provider/model that is configured and available in your Pi setup.
+# Built-in defaults: src/episode-retirement.ts (parseCapsuleModel / configuredReasoningEffort).
+export PI_EPISODE_RETIREMENT_MODEL='<provider>/<model>'
 export PI_EPISODE_RETIREMENT_REASONING_EFFORT=medium
 ```
 
-`PI_EPISODE_RETIREMENT_MODEL` is one `provider/model` value (the first slash separates provider from model ID); there is no model list or active-model fallback. The reasoning effort must be a Pi ThinkingLevel. `continuationGoal` must be non-empty and at most 1,000 characters. Capsules have exactly five fields; fields are bounded to 2,000 characters, items to 1,000 characters, arrays to 32 items, and serialized capsule JSON to 8,000 characters. Every new receipt is strict discriminated V5 (`initial|forward|recompose|deepen`) with original pin and exact mode-specific provenance/metrics; V1–V4 remain projectable and recallable historical readers.
+`PI_EPISODE_RETIREMENT_MODEL` is one `provider/model` value (the first slash separates provider from model ID); when unset, the built-in default in `src/episode-retirement.ts` is used. There is no model list or active-model fallback. The reasoning effort must be a Pi ThinkingLevel. `continuationGoal` must be non-empty and at most 1,000 characters. Capsules have exactly five fields; fields are bounded to 2,000 characters, items to 1,000 characters, arrays to 32 items, and serialized capsule JSON to 8,000 characters. Every new receipt is strict discriminated V5 (`initial|forward|recompose|deepen`) with original pin and exact mode-specific provenance/metrics; V1–V4 remain projectable and recallable historical readers.
 
 Interactive Pi renders a compact retirement result with serialized selected provider-message UTF-8 bytes → exact capsule-text UTF-8 bytes, configured model/reasoning, and only available nested usage fields; expanding it shows the exact latest provider continuation (one exact pin block plus capsule) and provenance. This is TUI-only: normal provider-visible tool `content` remains compact, and the append-only JSONL history is not rewritten.
 
@@ -48,6 +50,9 @@ Retirement pairs public `ReadonlySessionManager.buildContextEntries()` producers
 ## Structure
 
 - **`index.ts`** — Entry point (delegates to `src/`)
-- **`src/smart-compact.ts`** — Extension logic (env-var toggle, model selection, fallback)
+- **`src/smart-compact.ts`** — Smart compaction logic (env-var toggle, summary model selection, fallback)
+- **`src/episode-retirement.ts`** — Episode retirement logic (env-var config, capsule model, receipts)
+- **`src/episode-retirement-prompt.ts`** — Registers the `/retire` prompt when retirement is enabled
 - **`prompts/smart-compaction-prompt.md`** — The compaction prompt (single config point)
+- **`prompts/retire.md`** — The `/retire` prompt template
 - **`test/`** — Smoke tests

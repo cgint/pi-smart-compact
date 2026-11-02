@@ -58,6 +58,6 @@ npm run precommit
 
 Resets `node_modules` + lockfile, upgrades to latest semver-compatible versions, and runs audit. Keeps transitive vulnerabilities from accumulating.
 
-### Current vulnerability status
+### Historical vulnerability check
 
-Last checked: 2026-07-06 — **0 vulnerabilities** (after upgrading `@earendil-works/pi-coding-agent` from `^0.74.0` to `^0.80.3`).
+Last checked: 2026-07-06 — **0 vulnerabilities** (at that time, after upgrading `@earendil-works/pi-coding-agent` from `^0.74.0` to `^0.80.3`). The current dependency ranges are in `package.json`.

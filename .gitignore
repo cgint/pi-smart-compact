@@ -31,6 +31,9 @@ dist/
 *.swo
 *~
 
+# Native-tree spike sessions and captured request payloads (may contain local context)
+/artifacts/native-tree-handoff/
+
 # Testing sessions (client data — public repo)
 testing/sessions/*.jsonl
 

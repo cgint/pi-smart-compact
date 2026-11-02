@@ -1,0 +1,1242 @@
+{
+  "schema": "pi-smart-compact/grounded-agent-work-map/session-inventory",
+  "schema_version": "1.0.0",
+  "instance": {
+    "name": "native-tree-retirement",
+    "date": "2026-11-02",
+    "directory": "docs/grounded-agent-work-map/2026-11-02-native-tree-retirement/"
+  },
+  "generated_at_utc": "2026-11-02T09:59:45Z",
+  "generator": {
+    "note": "Draft derived from primary JSONL evidence; checked by agent/scripts/inventory_work_sessions.py"
+  },
+  "scope": {
+    "description": "Pi agent sessions of the native Pi /tree back-in-history work (pi-smart-compact, 2026-11-02) discoverable in the sessions directory.",
+    "sessions_dir": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--",
+    "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact",
+    "date": "2026-11-02",
+    "file_pattern": "2026-11-02T*.jsonl",
+    "exclusions": "Other dates in the same directory are out of scope. Sessions in other directories or workspaces, RPC-only runs and manually opened panes without ownership records are not scanned or not visible."
+  },
+  "discovery": {
+    "method": "Header line of every in-scope JSONL; pi-subagent-herdr-ownership-v1 custom entries (owner sessionId + pane records); first user message of each session (sha256); codemode launch calls located by subagent_start name.",
+    "files_in_scope": 25,
+    "participants_listed": 22,
+    "candidates_unlisted": 3,
+    "completeness_claimed": false,
+    "snapshot_note": "Lead and steward sessions were still being appended during the scan; recorded entry IDs are stable, later entries are not covered."
+  },
+  "roles_vocabulary": [
+    "lead",
+    "memory-steward",
+    "scout",
+    "memory-scout",
+    "reviewer",
+    "observer",
+    "implementer",
+    "doc-author",
+    "doc-writer",
+    "worker",
+    "inventory-worker"
+  ],
+  "identity_rules": "session_id = header id of the JSONL. launched_by is set only when an ownership custom entry lists the pane. Roles come from first user message text and matching launch task names. Filenames and timestamps alone are not used as evidence of delegation. Pane-to-session links are never verified: ownership records name the owner and pane; no child header or entry records the child session id for a pane, so verification.pane_to_session_link is inferred whenever launched_by is set. first_user_message must be the first user message in file order, not merely any user message.",
+  "sessions": [
+    {
+      "session_id": "01a19b53-5cd9-7313-97de-2b907fef684b",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T08-14-54-170Z_01a19b53-5cd9-7313-97de-2b907fef684b.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T08:14:54.170Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "lead",
+      "status": "participant",
+      "relationship": {
+        "launched_by": null,
+        "pane_id": null,
+        "pane_name": null,
+        "launch_evidence": null
+      },
+      "first_user_message": {
+        "entry_id": "842ccdd0",
+        "sha256": "998e671affbdc428a1a1180918f6e4b638aa33c014cf797ede1f474159bd896c"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "842ccdd0",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Main lead: first session of the day; owns 13 herdr ownership records (08:21-09:41); memory-main-scout scope names it as the main session."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "not_applicable",
+        "pane_to_session_link": "not_applicable",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b59-5104-7339-bb9a-5634ac8d051a",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T08-21-24-357Z_01a19b59-5104-7339-bb9a-5634ac8d051a.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T08:21:24.357Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:p2",
+        "pane_name": "tree-scout",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "f257882c",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793607678245
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 6112
+      },
+      "first_user_message": {
+        "entry_id": "44a1a7d9",
+        "sha256": "b0dda57bfe3fc22a16591bed946619d03a8df501aab8bffec69f7e6a6bde5eb6"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "ad143aff",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name tree-scout"
+        },
+        {
+          "in_session": "01a19b59-5104-7339-bb9a-5634ac8d051a",
+          "entry_id": "44a1a7d9",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Read-only /tree scout; prompt matches lead launch task tree-scout."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b59-5117-728c-a986-fdf6fe3d014f",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T08-21-24-376Z_01a19b59-5117-728c-a986-fdf6fe3d014f.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T08:21:24.376Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:p3",
+        "pane_name": "retire-scout",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "f257882c",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793607678277
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 6099
+      },
+      "first_user_message": {
+        "entry_id": "a23364b1",
+        "sha256": "bb726f19a6c449705c74bb48fbc4deb5f92e45575702ae29d4a675c4dffb3327"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "ad143aff",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name retire-scout"
+        },
+        {
+          "in_session": "01a19b59-5117-728c-a986-fdf6fe3d014f",
+          "entry_id": "a23364b1",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Read-only /retire scout; prompt matches lead launch task retire-scout."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b60-6c28-766f-acae-47b66d308dd4",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T08-29-10-057Z_01a19b60-6c28-766f-acae-47b66d308dd4.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T08:29:10.057Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "worker",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:p4",
+        "pane_name": "docs-consistency",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "84c5b477",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793608146380
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3677
+      },
+      "first_user_message": {
+        "entry_id": "5960d9e4",
+        "sha256": "a6a82b19454cbfc54ddfe56aa0d9dc937e945607caa5fa988e501b9e5d2fb2bd"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "cc2774fb",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name docs-consistency"
+        },
+        {
+          "in_session": "01a19b60-6c28-766f-acae-47b66d308dd4",
+          "entry_id": "5960d9e4",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Bounded documentation-consistency worker (editable); prompt matches lead launch task docs-consistency."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b7e-c952-716b-9b9a-13730e47eba5",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-02-19-987Z_01a19b7e-c952-716b-9b9a-13730e47eba5.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:02:19.987Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:p5",
+        "pane_name": "handoff-scout",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "064f4992",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793610136714
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3273
+      },
+      "first_user_message": {
+        "entry_id": "3d5ede5b",
+        "sha256": "156fb49acd4e985c311d4aa6d99504867713768780f8fe60a4377856e66d0bf5"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "8f688a49",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name handoff-scout"
+        },
+        {
+          "in_session": "01a19b7e-c952-716b-9b9a-13730e47eba5",
+          "entry_id": "3d5ede5b",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Read-only handoff investigation; prompt matches lead launch task handoff-scout."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b81-2a30-7009-a5cb-5f64aaef5a39",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-04-55-857Z_01a19b81-2a30-7009-a5cb-5f64aaef5a39.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:04:55.857Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:p6",
+        "pane_name": "context-meter",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "a9d64d67",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793610292603
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3254
+      },
+      "first_user_message": {
+        "entry_id": "a22f707b",
+        "sha256": "e51509d9b3e5c9b6040362f7175c80bb463144a36d6999220041f6f6064dff22"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "fe63fa61",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name context-meter"
+        },
+        {
+          "in_session": "01a19b81-2a30-7009-a5cb-5f64aaef5a39",
+          "entry_id": "a22f707b",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Read-only footer/context-usage investigation; prompt matches lead launch task context-meter."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b81-d4d2-7052-816e-b2d1bb9a231c",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-05-39-539Z_01a19b81-d4d2-7052-816e-b2d1bb9a231c.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:05:39.539Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "observer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:p7",
+        "pane_name": "retire-observer",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "05630b51",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793610336365
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3174
+      },
+      "first_user_message": {
+        "entry_id": "448d41ea",
+        "sha256": "f2a1b2e1af62ac0d5200b6942b092baec2b06fdb9eb81a4261a6e73d6ccf8372"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "1c77c310",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name retire-observer"
+        },
+        {
+          "in_session": "01a19b81-d4d2-7052-816e-b2d1bb9a231c",
+          "entry_id": "448d41ea",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Isolated live observer; prompt matches lead launch task retire-observer."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b8c-7be8-75e8-882a-e0a28306ddfa",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-17-17-673Z_01a19b8c-7be8-75e8-882a-e0a28306ddfa.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:17:17.673Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:pB",
+        "pane_name": "tree-cache",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "222c8316",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793611033884
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane. Same-role sibling; disambiguated only by scope text in the prompt.",
+        "timing_delta_ms": 3789
+      },
+      "first_user_message": {
+        "entry_id": "f285e143",
+        "sha256": "23aa782eecf1e16d7296ca3231e4b0a783ac3841db42815325701807b9dd4258"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "9a8bbb7d",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name tree-cache"
+        },
+        {
+          "in_session": "01a19b8c-7be8-75e8-882a-e0a28306ddfa",
+          "entry_id": "f285e143",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Read-only cache/prefix scout; prompt matches lead launch task tree-cache."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b8c-7bfc-701d-9a9d-415d4fcfd2f6",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-17-17-692Z_01a19b8c-7bfc-701d-9a9d-415d4fcfd2f6.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:17:17.692Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:pA",
+        "pane_name": "tree-handoff",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "222c8316",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793611033823
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane. Same-role sibling; disambiguated only by scope text in the prompt.",
+        "timing_delta_ms": 3869
+      },
+      "first_user_message": {
+        "entry_id": "17167a72",
+        "sha256": "75305b4397fc4701f5e0f2eb7fb84060863d93f8c9e49c7ac68e576406807ec9"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "9a8bbb7d",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name tree-handoff"
+        },
+        {
+          "in_session": "01a19b8c-7bfc-701d-9a9d-415d4fcfd2f6",
+          "entry_id": "17167a72",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Read-only handoff scout; prompt matches lead launch task tree-handoff."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b93-16e5-74fe-b348-c61bb508ad4b",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-24-30-566Z_01a19b93-16e5-74fe-b348-c61bb508ad4b.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:24:30.566Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "reviewer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:pD",
+        "pane_name": "native-rethink",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "30bb1f69",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793611466874
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane. Same-role sibling; disambiguated only by scope text in the prompt.",
+        "timing_delta_ms": 3692
+      },
+      "first_user_message": {
+        "entry_id": "6181d535",
+        "sha256": "66e0b6c6da6ff56b18d789b30954127f6d07b7d7d6095fe02ad42a2f199dade4"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "10f8516d",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name native-rethink"
+        },
+        {
+          "in_session": "01a19b93-16e5-74fe-b348-c61bb508ad4b",
+          "entry_id": "6181d535",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Independent reviewer; prompt 'Independently rethink from original requirements' matches lead task native-rethink."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b93-16f9-71cb-8855-6df4bc7f3657",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-24-30-586Z_01a19b93-16f9-71cb-8855-6df4bc7f3657.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:24:30.586Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "reviewer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:pC",
+        "pane_name": "tree-review",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "30bb1f69",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793611466751
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane. Same-role sibling; disambiguated only by scope text in the prompt.",
+        "timing_delta_ms": 3835
+      },
+      "first_user_message": {
+        "entry_id": "5b16671d",
+        "sha256": "a8958968d3301e5ab568edce33a721c9346efbf79b4d715716443d158829e328"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "10f8516d",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name tree-review"
+        },
+        {
+          "in_session": "01a19b93-16f9-71cb-8855-6df4bc7f3657",
+          "entry_id": "5b16671d",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Independent reviewer; prompt 'Critically review plan' matches lead task tree-review."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19b9b-14e5-76c6-943d-720d882a68fe",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-33-14-342Z_01a19b9b-14e5-76c6-943d-720d882a68fe.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:33:14.342Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "doc-author",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:pE",
+        "pane_name": "tree-plan-editor",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "ef24f1ed",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793611991240
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3102
+      },
+      "first_user_message": {
+        "entry_id": "edab477b",
+        "sha256": "6b0eb09b07e3527a8b27c31dff5e71bbec74a1da9e06e65280f86df26cf33210"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "b2fea60e",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name tree-plan-editor"
+        },
+        {
+          "in_session": "01a19b9b-14e5-76c6-943d-720d882a68fe",
+          "entry_id": "edab477b",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Shared design document author reporting to lead; writes docs/native-tree-retirement-plan.md."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-39-58-735Z_01a19ba1-408f-762d-9bc5-65f34d8c9aad.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:39:58.735Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "memory-steward",
+      "status": "participant",
+      "relationship": {
+        "launched_by": null,
+        "pane_id": null,
+        "pane_name": null,
+        "launch_evidence": null
+      },
+      "first_user_message": {
+        "entry_id": "9ed05372",
+        "sha256": "3b82274e4bb24ac7e1134e7b0f7875bb7b9ebcb3a08b99a4b201ffd27187cb65"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "9ed05372",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Memory steward: user-directed first prompt (persist steps/findings/relations); no ownership record in lead session; owns panes w1:pH..w1:pR."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "not_applicable",
+        "pane_to_session_link": "not_applicable",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19ba2-8a15-752d-aa28-056e9417a817",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-41-23-094Z_01a19ba2-8a15-752d-aa28-056e9417a817.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:41:23.094Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "implementer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19b53-5cd9-7313-97de-2b907fef684b",
+        "pane_id": "w1:pG",
+        "pane_name": "tree-spike-build",
+        "launch_evidence": {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "2b51c945",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793612479831
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3263
+      },
+      "first_user_message": {
+        "entry_id": "10f75573",
+        "sha256": "1418fff8c993cbae6bff7436b6dbd29de51c936054be727e311fcbb9fd921169"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19b53-5cd9-7313-97de-2b907fef684b",
+          "entry_id": "70d3020b",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name tree-spike-build"
+        },
+        {
+          "in_session": "01a19ba2-8a15-752d-aa28-056e9417a817",
+          "entry_id": "10f75573",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Implementer reporting to lead; prompt matches lead launch task tree-spike-build."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19ba2-90dd-75d1-becd-8e81256183bb",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-41-24-830Z_01a19ba2-90dd-75d1-becd-8e81256183bb.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:41:24.830Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "memory-scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pH",
+        "pane_name": "memory-main-scout",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "04778cbf",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793612481732
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane. Same-role sibling; disambiguated only by scope text in the prompt.",
+        "timing_delta_ms": 3098
+      },
+      "first_user_message": {
+        "entry_id": "7e4f350e",
+        "sha256": "efc9d4a151a7c3f81895683011ead56c2e32805dea6f2bec4787140a60fcc7f5"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "ce9483e8",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name memory-main-scout"
+        },
+        {
+          "in_session": "01a19ba2-90dd-75d1-becd-8e81256183bb",
+          "entry_id": "7e4f350e",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Temporary read-only scout for memory steward; scope names main session 08-14-54."
+        },
+        {
+          "in_session": "01a19ba2-90dd-75d1-becd-8e81256183bb",
+          "entry_id": "7e4f350e",
+          "entry_type": "message",
+          "kind": "identity_reference",
+          "note": "Scope text names main session 2026-11-02T08-14-54-170Z as the main lead."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19ba2-9116-729c-a302-830b55124c8d",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-41-24-887Z_01a19ba2-9116-729c-a302-830b55124c8d.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:41:24.887Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "memory-scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pJ",
+        "pane_name": "memory-peer-scout",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "04778cbf",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793612481747
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane. Same-role sibling; disambiguated only by scope text in the prompt.",
+        "timing_delta_ms": 3140
+      },
+      "first_user_message": {
+        "entry_id": "8b591c91",
+        "sha256": "3143a758a401266773081ac98797e64d3df50f939cb391b9f64b1ac90a2dc026"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "ce9483e8",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name memory-peer-scout"
+        },
+        {
+          "in_session": "01a19ba2-9116-729c-a302-830b55124c8d",
+          "entry_id": "8b591c91",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Temporary read-only scout for memory steward; scope names peer 2026-11-02 sessions excluding 08-14-54."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19ba4-b6db-73cd-a747-56cb3125c55d",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-43-45-628Z_01a19ba4-b6db-73cd-a747-56cb3125c55d.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:43:45.628Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "doc-writer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pK",
+        "pane_name": "methodology-writer",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "cced1984",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793612622427
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3201
+      },
+      "first_user_message": {
+        "entry_id": "64f3ee33",
+        "sha256": "7cad64fa66e6273cd3a704326bd1823e994be3561712db3094c0adf311615275"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "7ce97878",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name methodology-writer"
+        },
+        {
+          "in_session": "01a19ba4-b6db-73cd-a747-56cb3125c55d",
+          "entry_id": "64f3ee33",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Writes user methodology expectations document; prompt matches steward task methodology-writer."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19baa-638b-76f1-9296-9e0dbd30a122",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-49-57-516Z_01a19baa-638b-76f1-9296-9e0dbd30a122.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:49:57.516Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "scout",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pN",
+        "pane_name": "progress-current-scout",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "caf9b26c",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793612994417
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3099
+      },
+      "first_user_message": {
+        "entry_id": "6b7bfc67",
+        "sha256": "ec3a00a80c0b23fe5babcf378f4aa26e5eba2e44eab0c32514cc7f4b18d39a9a"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "8dfe87c3",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name progress-current-scout"
+        },
+        {
+          "in_session": "01a19baa-638b-76f1-9296-9e0dbd30a122",
+          "entry_id": "6b7bfc67",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Independent scout of latest work; prompt matches steward task progress-current-scout."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19baa-6394-77fa-9b0e-98b1bd9afc49",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-49-57-525Z_01a19baa-6394-77fa-9b0e-98b1bd9afc49.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:49:57.525Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "doc-writer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pM",
+        "pane_name": "progress-map-writer",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "caf9b26c",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793612994413
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3112
+      },
+      "first_user_message": {
+        "entry_id": "a01ceeaa",
+        "sha256": "70a6afca463a80c3f78a761ef8fc070313a5e9d3f2a1d4f2a0e344ccdd558643"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "8dfe87c3",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name progress-map-writer"
+        },
+        {
+          "in_session": "01a19baa-6394-77fa-9b0e-98b1bd9afc49",
+          "entry_id": "a01ceeaa",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Creates first grounded progress map; prompt matches steward task progress-map-writer."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19bad-401f-7296-9a8e-eae790ca3a71",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-53-05-056Z_01a19bad-401f-7296-9a8e-eae790ca3a71.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:53:05.056Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "doc-writer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pP",
+        "pane_name": "map-method-update",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "437385dc",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793613181769
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3287
+      },
+      "first_user_message": {
+        "entry_id": "5474682c",
+        "sha256": "11143052ab20fe15b7cc03963157ce335d994d86a9611612953f66131b60a721"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "da33c04e",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name map-method-update"
+        },
+        {
+          "in_session": "01a19bad-401f-7296-9a8e-eae790ca3a71",
+          "entry_id": "5474682c",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Updates grounded progress map method with user requirements; prompt matches steward task map-method-update."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19bb0-0ec8-766c-b1ac-0d926ae7ae7c",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-56-09-033Z_01a19bb0-0ec8-766c-b1ac-0d926ae7ae7c.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:56:09.033Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "inventory-worker",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pQ",
+        "pane_name": "session-inventory",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "14b3cf3e",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793613365835
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3198
+      },
+      "first_user_message": {
+        "entry_id": "485e7dd5",
+        "sha256": "577431699e3d149a742f2aaed7dd9bf465b29008568e7be52f627320f4a80c7f"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "d0e60ea7",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name session-inventory"
+        },
+        {
+          "in_session": "01a19bb0-0ec8-766c-b1ac-0d926ae7ae7c",
+          "entry_id": "485e7dd5",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "This inventory task (metadata.json and inventory_work_sessions.py); prompt matches steward task session-inventory."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    },
+    {
+      "session_id": "01a19bb0-714e-708e-a069-7ec6cd539c2f",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-56-34-255Z_01a19bb0-714e-708e-a069-7ec6cd539c2f.jsonl",
+      "header": {
+        "timestamp": "2026-11-02T09:56:34.255Z",
+        "cwd": "/Users/christian.gintenreiter/dev-external/pi-smart-compact"
+      },
+      "role": "doc-writer",
+      "status": "participant",
+      "relationship": {
+        "launched_by": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+        "pane_id": "w1:pR",
+        "pane_name": "method-nuances",
+        "launch_evidence": {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "9810337e",
+          "entry_type": "custom",
+          "custom_type": "pi-subagent-herdr-ownership-v1",
+          "launched_at_ms": 1793613391219
+        },
+        "link_basis": "Inferred, not recorded: owner ownership record lists pane+name; pane name matches the owner launch-task text; child header has no owner or pane field, so no file links this child session id to the pane.",
+        "timing_delta_ms": 3036
+      },
+      "first_user_message": {
+        "entry_id": "3e6e168e",
+        "sha256": "b895ec07b9a20f273fd54588cd02da63ec6afa13dae8b42001867b679b8f74c5"
+      },
+      "evidence": [
+        {
+          "in_session": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+          "entry_id": "7df2a535",
+          "entry_type": "message",
+          "kind": "launch_call",
+          "note": "assistant codemode call containing subagent_start name method-nuances"
+        },
+        {
+          "in_session": "01a19bb0-714e-708e-a069-7ec6cd539c2f",
+          "entry_id": "3e6e168e",
+          "entry_type": "message",
+          "kind": "first_user_message",
+          "note": "Editable worker updating docs/grounded-progress-map.md; prompt matches steward task method-nuances."
+        }
+      ],
+      "verification": {
+        "session_file_and_header": "verified",
+        "first_user_message": "verified",
+        "owner_record_lists_pane": "verified",
+        "pane_to_session_link": "inferred",
+        "role": "inferred"
+      },
+      "role_basis": "Inferred from first user message text (and launch-task name where owned); not recorded in any file."
+    }
+  ],
+  "launches_without_session_file": [
+    {
+      "pane_id": "w1:p8",
+      "pane_name": "retire-live",
+      "owner_session_id": "01a19b53-5cd9-7313-97de-2b907fef684b",
+      "launched_at_ms": 1793610441475,
+      "ownership_entry_id": "445bdbfa",
+      "note": "Lead launch task was an isolated Pi 1.4 RPC /retire verification. No in-scope JSONL matches it. Location unknown."
+    }
+  ],
+  "candidates_not_listed": [
+    {
+      "session_id": "01a19b86-e614-72a9-a481-cfeb08d9f007",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-11-11-636Z_01a19b86-e614-72a9-a481-cfeb08d9f007.jsonl",
+      "status": "candidate-unlisted",
+      "reason": "No ownership record; single-word first prompt 'config'; no reference from any listed session. Not classified."
+    },
+    {
+      "session_id": "01a19b87-3a93-7375-97ec-d2ddc796ad27",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-11-33-268Z_01a19b87-3a93-7375-97ec-d2ddc796ad27.jsonl",
+      "status": "candidate-unlisted",
+      "reason": "Prompt 'Please help test /retire in this session ... Keep this pane open' is user-facing. Could be pane w1:p8 retire-live, but no ownership record links it and its prompt differs from the lead's retire-live task. Unresolved."
+    },
+    {
+      "session_id": "01a19bb1-cea2-70d9-bc1e-7a6ae97f901b",
+      "path": "/Users/christian.gintenreiter/.pi/profiles/minimal/agent/sessions/--Users-christian.gintenreiter-dev-external-pi-smart-compact--/2026-11-02T09-58-03-683Z_01a19bb1-cea2-70d9-bc1e-7a6ae97f901b.jsonl",
+      "status": "candidate-unlisted",
+      "reason": "Prompt says it may edit only instance Markdown and that 'another worker owns' metadata.json and scripts, which suggests a peer of this worker. Created after the ownership records; launcher not found. Not classified as participant."
+    }
+  ],
+  "ownership_summary": {
+    "lead_session_id": "01a19b53-5cd9-7313-97de-2b907fef684b",
+    "lead_owned_panes": [
+      "w1:p2",
+      "w1:p3",
+      "w1:p4",
+      "w1:p5",
+      "w1:p6",
+      "w1:p7",
+      "w1:p8",
+      "w1:pA",
+      "w1:pB",
+      "w1:pC",
+      "w1:pD",
+      "w1:pE",
+      "w1:pG"
+    ],
+    "steward_session_id": "01a19ba1-408f-762d-9bc5-65f34d8c9aad",
+    "steward_owned_panes": [
+      "w1:pH",
+      "w1:pJ",
+      "w1:pK",
+      "w1:pM",
+      "w1:pN",
+      "w1:pP",
+      "w1:pQ",
+      "w1:pR",
+      "w1:pS"
+    ]
+  },
+  "limitations": [
+    "Headers carry no parent field; delegation is established only via pi-subagent-herdr-ownership-v1 records plus prompt and launch-task text.",
+    "Identical-role pairs (memory scouts, reviewers) are mapped by prompt scope text only: memory-main vs memory-peer scope; 'Critically review plan' vs 'Independently rethink'.",
+    "retire-live pane w1:p8 has no matching session file in this directory.",
+    "09-11-11, 09-11-33 and 09-58-03 are unlisted candidates; their relationship is unresolved.",
+    "Ownership records only cover panes launched through the pi-subagent-herdr extension; manual panes are invisible.",
+    "Lead and steward sessions were still active during the scan; compaction entries may summarize earlier turns.",
+    "Snapshot validity: JSONL files are live. The validator treats malformed nonblank lines as errors; a file without a trailing newline may be a partial live write (transient-read caveat), so re-run after the writer flushes.",
+    "Unrecorded in-scope file 2026-11-02T10-01-46-553Z_01a19bb5-3538-7413-8a14-3098aeadb78e.jsonl appeared after the scan. It is not a candidate in this snapshot and has not been classified."
+  ],
+  "verify": "python3 agent/scripts/inventory_work_sessions.py docs/grounded-agent-work-map/2026-11-02-native-tree-retirement/metadata.json --candidates",
+  "verification_levels": {
+    "verified": "checked against the JSONL by scripts/inventory_work_sessions.py (existence, header, first user message, evidence entry, ownership entry)",
+    "inferred": "matched by text or timing; no file records this link",
+    "not_applicable": "field does not apply to this session"
+  }
+}
