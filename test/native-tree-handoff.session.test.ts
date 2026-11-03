@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, rmSync, mkdtempSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import registerNativeTreeHandoff, {
@@ -80,7 +82,12 @@ function handoffRecords(h: Harness): { id: string; details: any; isError: boolea
 const branchSummaries = (sm: SessionManager): any[] => sm.getEntries().filter((e: any) => e.type === "branch_summary");
 
 function runCommand(h: Harness, args: string): Promise<void> {
-  return h.session.prompt(`/${HANDOFF_COMMAND} ${args}`);
+  const token = h.artifactLog?.before("pre-command");
+  const result = h.session.prompt(`/${HANDOFF_COMMAND} ${args}`);
+  return result.then(
+    () => { if (token) h.artifactLog?.after(token, "post-command"); },
+    (err) => { if (token) h.artifactLog?.after(token, "post-command-error"); throw err; },
+  );
 }
 
 const lastNotice = (h: Harness): string => h.notices.at(-1)?.message ?? "<none>";
@@ -323,6 +330,12 @@ describe("native tree handoff (real AgentSession, faux provider, real extension 
     const dir = h1.dir;
     const target = await buildHistory(h1);
     const handoffId = await recordHandoff(h1, target, "restart text");
+    // Passive pre-disposal snapshot + full-event flush for h1, immediately before the
+    // unchanged h1.session.dispose(). This preserves the original handoff execution
+    // lifecycle (tool events) that would otherwise be lost when the original lifecycle
+    // bypasses the added h.dispose logger. No original semantics change.
+    const h1PreDisposeToken = h1.artifactLog?.before("pre-dispose-row7-h1");
+    if (h1PreDisposeToken) h1.artifactLog?.after(h1PreDisposeToken, "pre-dispose-row7-h1-flush");
     h1.session.dispose(); // simulate process end; directory kept for the second session
 
     const h2 = await createHarness({ extensions: [ours()], sessionFile: file, dir });
@@ -341,7 +354,9 @@ describe("native tree handoff (real AgentSession, faux provider, real extension 
     const h = await createHarness({ extensions: [ours(), spy(log)] });
     try {
       const target = await buildHistory(h);
+      const navToken = h.artifactLog?.before("pre-navigate-row11");
       const result = await h.session.navigateTree(target, { summarize: false });
+      if (navToken) h.artifactLog?.after(navToken, "post-navigate-row11");
       expect(result.cancelled).toBe(false);
       expect(log.before).toBe(1);
       expect(log.trees).toHaveLength(1);
@@ -488,6 +503,194 @@ describe("native tree handoff (real AgentSession, faux provider, real extension 
     }
   });
 
+  it("row 18 runtime gate A: real EACCES, verification reread succeeds (byte-identical) => thrown with persisted-unchanged report", async () => {
+    let callCount = 0;
+    const h = await createHarness({
+      extensions: [ours({
+        readSessionFile: async (path) => {
+          callCount++;
+          return readFileSync(path);
+        },
+      })],
+    });
+    let originalMode: number | undefined;
+    try {
+      const target = await buildHistory(h);
+      const id = await recordHandoff(h, target, "t18-rt-a");
+      const originalLeaf = h.sessionManager.getLeafId();
+      const oldBytes = readFileSync(h.file);
+
+      originalMode = statSync(h.file).mode & 0o777;
+      chmodSync(h.file, 0o444);
+
+      const faultToken = h.artifactLog?.before("pre-eacces-fault");
+      await runCommand(h, id);
+      h.artifactLog?.after(faultToken!, "post-eacces-fault");
+
+      // The verification reread must have been invoked exactly twice: preflight (call 1)
+      // and the post-navError verification (call 2).
+      expect(callCount).toBe(2);
+
+      // Mode A: the verification reread succeeds and finds byte-identical content.
+      // The outcome is a thrown failure with an explicit persisted-unchanged report.
+      expect(lastNotice(h)).toMatch(/navigateTree threw \(EACCES/);
+      expect(lastNotice(h)).toMatch(/Persisted file unchanged/);
+
+      const faultBytes = readFileSync(h.file);
+      expect(faultBytes.equals(oldBytes)).toBe(true);
+
+      const postFaultLeaf = h.sessionManager.getLeafId();
+      const recoveryDest = postFaultLeaf === originalLeaf ? target : (originalLeaf ?? target);
+      expect(recoveryDest).not.toBe(postFaultLeaf);
+      const navToken = h.artifactLog?.before("pre-recovery-nav");
+      const navResult = await h.session.navigateTree(recoveryDest, { summarize: false });
+      h.artifactLog?.after(navToken!, "post-recovery-nav");
+      expect(navResult.cancelled).toBe(false);
+      expect(h.sessionManager.getLeafId()).toBe(recoveryDest);
+
+      if (h.sessionManager.getLeafId() !== originalLeaf) {
+        const backToken = h.artifactLog?.before("pre-restore-leaf");
+        const backResult = await h.session.navigateTree(originalLeaf!, { summarize: false });
+        h.artifactLog?.after(backToken!, "post-restore-leaf");
+        expect(backResult.cancelled).toBe(false);
+        expect(h.sessionManager.getLeafId()).toBe(originalLeaf);
+      }
+
+      if (originalMode !== undefined) chmodSync(h.file, originalMode);
+
+      const reapplyToken = h.artifactLog?.before("pre-reapply");
+      await runCommand(h, id);
+      h.artifactLog?.after(reapplyToken!, "post-reapply");
+      expect(lastNotice(h)).toMatch(/^Tree handoff applied/);
+      expect(branchSummaries(h.sessionManager)).toHaveLength(1);
+    } finally {
+      if (originalMode !== undefined) chmodSync(h.file, originalMode);
+      h.dispose();
+    }
+  });
+
+  it("row 18 runtime gate B: real EACCES, verification reread throws => uncertain, persisted-state-unverified", async () => {
+    let callCount = 0;
+    const h = await createHarness({
+      extensions: [ours({
+        readSessionFile: async (path) => {
+          callCount++;
+          if (callCount === 2) throw new Error("injected verification-read failure");
+          return readFileSync(path);
+        },
+      })],
+    });
+    let originalMode: number | undefined;
+    try {
+      const target = await buildHistory(h);
+      const id = await recordHandoff(h, target, "t18-rt-b");
+      const originalLeaf = h.sessionManager.getLeafId();
+      const oldBytes = readFileSync(h.file);
+
+      originalMode = statSync(h.file).mode & 0o777;
+      chmodSync(h.file, 0o444);
+
+      const faultToken = h.artifactLog?.before("pre-eacces-fault");
+      await runCommand(h, id);
+      h.artifactLog?.after(faultToken!, "post-eacces-fault");
+
+      // Mode B: the verification reread throws => uncertain, persisted-state-unverified.
+      expect(callCount).toBe(2);
+      expect(lastNotice(h)).toMatch(/uncertain/i);
+      expect(lastNotice(h)).toMatch(/Persisted state unverified/);
+      expect(lastNotice(h)).toMatch(/injected verification-read failure/);
+
+      const faultBytes = readFileSync(h.file);
+      expect(faultBytes.equals(oldBytes)).toBe(true);
+
+      const postFaultLeaf = h.sessionManager.getLeafId();
+      const recoveryDest = postFaultLeaf === originalLeaf ? target : (originalLeaf ?? target);
+      expect(recoveryDest).not.toBe(postFaultLeaf);
+      const navToken = h.artifactLog?.before("pre-recovery-nav");
+      const navResult = await h.session.navigateTree(recoveryDest, { summarize: false });
+      h.artifactLog?.after(navToken!, "post-recovery-nav");
+      expect(navResult.cancelled).toBe(false);
+
+      if (h.sessionManager.getLeafId() !== originalLeaf) {
+        const backToken = h.artifactLog?.before("pre-restore-leaf");
+        const backResult = await h.session.navigateTree(originalLeaf!, { summarize: false });
+        h.artifactLog?.after(backToken!, "post-restore-leaf");
+        expect(backResult.cancelled).toBe(false);
+      }
+
+      if (originalMode !== undefined) chmodSync(h.file, originalMode);
+
+      const reapplyToken = h.artifactLog?.before("pre-reapply");
+      await runCommand(h, id);
+      h.artifactLog?.after(reapplyToken!, "post-reapply");
+      expect(lastNotice(h)).toMatch(/^Tree handoff applied/);
+    } finally {
+      if (originalMode !== undefined) chmodSync(h.file, originalMode);
+      h.dispose();
+    }
+  });
+
+  it("row 18 runtime gate C: real EACCES, verification reread returns changed buffer => uncertain, persisted-state-unverified", async () => {
+    let callCount = 0;
+    const h = await createHarness({
+      extensions: [ours({
+        readSessionFile: async (path) => {
+          callCount++;
+          if (callCount === 2) return Buffer.from("corrupted-by-injected-view");
+          return readFileSync(path);
+        },
+      })],
+    });
+    let originalMode: number | undefined;
+    try {
+      const target = await buildHistory(h);
+      const id = await recordHandoff(h, target, "t18-rt-c");
+      const originalLeaf = h.sessionManager.getLeafId();
+      const oldBytes = readFileSync(h.file);
+
+      originalMode = statSync(h.file).mode & 0o777;
+      chmodSync(h.file, 0o444);
+
+      const faultToken = h.artifactLog?.before("pre-eacces-fault");
+      await runCommand(h, id);
+      h.artifactLog?.after(faultToken!, "post-eacces-fault");
+
+      // Mode C: the verification reread returns a changed buffer => uncertain, persisted-state-unverified.
+      expect(callCount).toBe(2);
+      expect(lastNotice(h)).toMatch(/uncertain/i);
+      expect(lastNotice(h)).toMatch(/Persisted state unverified/);
+      expect(lastNotice(h)).toMatch(/file bytes differ from preflight/);
+
+      const faultBytes = readFileSync(h.file);
+      expect(faultBytes.equals(oldBytes)).toBe(true);
+
+      const postFaultLeaf = h.sessionManager.getLeafId();
+      const recoveryDest = postFaultLeaf === originalLeaf ? target : (originalLeaf ?? target);
+      expect(recoveryDest).not.toBe(postFaultLeaf);
+      const navToken = h.artifactLog?.before("pre-recovery-nav");
+      const navResult = await h.session.navigateTree(recoveryDest, { summarize: false });
+      h.artifactLog?.after(navToken!, "post-recovery-nav");
+      expect(navResult.cancelled).toBe(false);
+
+      if (h.sessionManager.getLeafId() !== originalLeaf) {
+        const backToken = h.artifactLog?.before("pre-restore-leaf");
+        const backResult = await h.session.navigateTree(originalLeaf!, { summarize: false });
+        h.artifactLog?.after(backToken!, "post-restore-leaf");
+        expect(backResult.cancelled).toBe(false);
+      }
+
+      if (originalMode !== undefined) chmodSync(h.file, originalMode);
+
+      const reapplyToken = h.artifactLog?.before("pre-reapply");
+      await runCommand(h, id);
+      h.artifactLog?.after(reapplyToken!, "post-reapply");
+      expect(lastNotice(h)).toMatch(/^Tree handoff applied/);
+    } finally {
+      if (originalMode !== undefined) chmodSync(h.file, originalMode);
+      h.dispose();
+    }
+  });
+
   it("confirmation decline: no navigation; without UI the command proceeds only on explicit invocation", async () => {
     const h = await createHarness({ extensions: [ours()] });
     try {
@@ -533,9 +736,11 @@ describe("native tree handoff (real AgentSession, faux provider, real extension 
       for (let i = 0; i < 200 && !started; i++) await new Promise((r) => setTimeout(r, 5));
       expect(started).toBe(true);
 
+      const navToken15 = h.artifactLog?.before("pre-navigate-row15");
       await expect(h.session.navigateTree(target, { summarize: false })).rejects.toThrow(
         /Wait for the current response to finish/,
       );
+      if (navToken15) h.artifactLog?.after(navToken15, "post-navigate-row15-rejected");
       const command = runCommand(h, id);
       release();
       await slow;
@@ -545,6 +750,145 @@ describe("native tree handoff (real AgentSession, faux provider, real extension 
       expect(branchSummaries(h.sessionManager)).toHaveLength(0);
       expect(h.sessionManager.getLeafId()).not.toBe(target);
     } finally {
+      h.dispose();
+    }
+  });
+
+  it("row 15 exact: concurrent session.prompt during command confirm phase makes navigateTree hit the real SDK guard throw; persisted file unchanged; no summary/tree event; recovery proves lock released", async () => {
+    const log = newLog();
+    // A real before_agent_start extension that suspends only when armed.
+    // The gate starts resolved (no suspension) so fixture prompts complete normally.
+    // Before starting the concurrent prompt, the test arms the gate to suspend the
+    // prepare phase. This is the SOLE model gate: no provider callback is gated.
+    let hookArmed = false;
+    let releaseHook: () => void = () => {};
+    let hookGatePromise: Promise<void> = Promise.resolve();
+    let hookEnteredSignal: (() => void) | undefined;
+    let hookEnteredPromise: Promise<void> = Promise.resolve();
+    const gatedHook: Extension = (pi) => {
+      pi.on("before_agent_start", async () => {
+        hookEnteredSignal?.();
+        if (hookArmed) await hookGatePromise;
+        return undefined;
+      });
+    };
+    const h = await createHarness({ extensions: [ours(), spy(log), gatedHook] });
+    // Hoisted outstanding promises and resolvers for the finally cleanup proof.
+    let commandPromise: Promise<void> | undefined;
+    let concurrentPromise: Promise<void> | undefined;
+    let resolveConfirm: (v: boolean) => void = () => {};
+    try {
+      const target = await buildHistory(h);
+      const handoffId = await recordHandoff(h, target, "exact race text");
+      const preflightBytes = readBytes(h.file);
+      const originalLeaf = h.sessionManager.getLeafId();
+
+      // Suspend the command's UI confirmation so it holds the in-flight lock at the confirm dialog.
+      const confirmGate = new Promise<boolean>((r) => (resolveConfirm = r));
+      h.confirmAnswer.value = confirmGate;
+
+      // Start the command while idle: it passes waitForIdle (line 660), isIdle check (line 662),
+      // reads the file, runs preflight, then awaits ui.confirm (suspended by confirmGate).
+      commandPromise = runCommand(h, handoffId);
+      await h.nextConfirm(); // command has reached the confirm dialog and holds the in-flight lock
+
+      // Arm the hook gate and its causal entered-signal, so the next before_agent_start
+      // (from the concurrent prompt) suspends the prepare phase and signals on entry.
+      hookArmed = true;
+      hookEnteredPromise = new Promise<void>((r) => (hookEnteredSignal = r));
+      hookGatePromise = new Promise<void>((r) => (releaseHook = r));
+
+      // Start a concurrent PUBLIC session.prompt with an ordinary queued faux response.
+      // The session is idle (no run active), so the SDK starts a new run: _isAgentRunActive=true
+      // (line 1442) BEFORE awaiting _prepareRun, which awaits our gatedHook's before_agent_start.
+      // The hook blocks on hookGatePromise, so the run is in the PREPARING phase:
+      // session.isStreaming=true, agent.state.isStreaming=false (no tokens yet), no user
+      // message persisted. Only the prepare hook gates; the provider response is ordinary.
+      h.core.setResponses([fauxAssistantMessage(fauxText("concurrent reply"))]);
+      concurrentPromise = h.session.prompt("concurrent question");
+
+      // Causal deferred signal: wait for the real before_agent_start hook to have entered.
+      // No polling clock, no fake timers — the hook itself resolves the signal.
+      await hookEnteredPromise;
+
+      // Passive artifact snapshot of the busy-valid phase: the actual SDK flags (run active,
+      // not yet streaming tokens), the raw .jsonl bytes, the tree, and the leaf are all captured
+      // by the existing observer. All notices are retained.
+      const busyPhaseToken = h.artifactLog?.before("busy-phase-preparing");
+
+      // Explicit named phase before the guard throw: the concurrent run is PREPARING, not
+      // streaming tokens. The SDK run flag is true; the agent has not started streaming.
+      expect(h.session.isStreaming).toBe(true);
+      expect(h.session.isIdle).toBe(false);
+      expect(h.session.agent.state.isStreaming).toBe(false);
+      // The session file is unchanged: the user message is built in-memory but not yet persisted.
+      expect(readBytes(h.file).equals(preflightBytes)).toBe(true);
+
+      // Resolve the command's UI confirmation while the prepare hook is blocked.
+      resolveConfirm(true);
+
+      // The command proceeds past confirm, re-validates (branch unchanged — no new entry),
+      // sets pending, then calls navigateTree. navigateTree checks isStreaming (line 3280)
+      // and throws the real SDK guard error. The command catches it, verifies the file is
+      // unchanged, and reports the thrown outcome.
+      await commandPromise;
+
+      const lastMsg = lastNotice(h);
+      expect(lastMsg).toMatch(/navigateTree threw \(Wait for the current response to finish/);
+      expect(lastMsg).toMatch(/Persisted file unchanged/);
+
+      // No branch summary committed, no session_tree event, leaf unchanged, file unchanged.
+      expect(branchSummaries(h.sessionManager)).toHaveLength(0);
+      expect(log.trees).toHaveLength(0);
+      expect(h.sessionManager.getLeafId()).toBe(originalLeaf);
+      expect(readBytes(h.file).equals(preflightBytes)).toBe(true);
+
+      // Passive artifact snapshot after the guard throw: the run is still preparing (hook held),
+      // the command's own session_before_tree never fired on the guard-failed navigation, and the
+      // file remains byte-identical to the preflight. The busy-phase token is closed here so the
+      // per-command event slice is exact.
+      if (busyPhaseToken) h.artifactLog?.after(busyPhaseToken, "busy-phase-guard-thrown");
+
+      // Release the prepare hook; the run completes with the ordinary queued response.
+      // No provider gate exists, so there is nothing else to release.
+      releaseHook();
+      await concurrentPromise;
+      expect(h.session.isStreaming).toBe(false);
+      expect(h.session.isIdle).toBe(true);
+
+      // Recovery preconditions: the concurrent prompt moved the leaf past originalLeaf, so the
+      // SDK's native no-op check (if targetId === oldLeafId) cannot return { cancelled: false }
+      // without invoking the pending hook. And originalLeaf is not the pending target (the first
+      // assistant message), so a no-op at the target would not have cancelled. Both must hold for
+      // the recovery navigation to be a genuine non-noop that would cancel a stale pending.
+      const leafAfterConcurrent = h.sessionManager.getLeafId();
+      expect(leafAfterConcurrent).not.toBe(originalLeaf);
+      expect(originalLeaf).not.toBe(target);
+
+      // Recovery: a non-noop ordinary navigateTree to the original leaf (different from the
+      // pending target, which is the first assistant message). If a stale pending state remained
+      // from the guard-failed command, this navigation would be cancelled; it is not.
+      const recoveryNavToken = h.artifactLog?.before("pre-recovery-navigate");
+      const navResult = await h.session.navigateTree(originalLeaf!, { summarize: false });
+      if (recoveryNavToken) h.artifactLog?.after(recoveryNavToken, "post-recovery-navigate");
+      expect(navResult.cancelled).toBe(false);
+      expect(h.sessionManager.getLeafId()).toBe(originalLeaf);
+
+      // The original handoff re-applies on the restored path with the SAME handoffId: no new
+      // handoff tool fixture is needed. This proves the in-flight lock was released and the
+      // pending state was cleared by the guard-failed command's finally.
+      await runCommand(h, handoffId);
+      expect(lastNotice(h)).toMatch(/^Tree handoff applied/);
+      expect(branchSummaries(h.sessionManager)).toHaveLength(1);
+    } finally {
+      // Always release every gate and await every outstanding task before disposal, even on
+      // assertion failure. The confirm gate and prepare hook are released first so no run is
+      // left suspended; then both prompts are settled (rejections swallowed) so dispose sees
+      // no outstanding work.
+      resolveConfirm(false);
+      releaseHook();
+      if (commandPromise) await commandPromise.catch(() => {});
+      if (concurrentPromise) await concurrentPromise.catch(() => {});
       h.dispose();
     }
   });
@@ -831,3 +1175,83 @@ describe("native tree handoff confirmation timeout (fake timers; no real sleep)"
     }
   });
 });
+
+describe("artifact recorder: session-file absence is represented explicitly, not ENOENT or fabricated", () => {
+  it("no-model fresh harness: before() on a missing session file writes fileAbsent metadata, not an empty-session claim", async () => {
+    const artifactDir = mkdtempSync(join(tmpdir(), "native-tree-absence-"));
+    try {
+      // No provider, no model: the session file does not exist until the first prompt.
+      const h = await createHarness({ extensions: [ours()], withModel: false, logDir: artifactDir, testId: "recorder-absence-regression" });
+      try {
+        // The session file does not exist yet (fresh harness, no prompt).
+        const pre = existsSync(h.file);
+        expect(pre).toBe(false);
+
+        // before() must not throw ENOENT and must not fabricate an empty session.
+        const token = h.artifactLog!.before("pre-absence");
+        expect(token.id).toBe("cmd-000");
+
+        // The absence marker is written; no session.jsonl (only .absent).
+        // Read the origin.json to get the actual testDirName (slug + hash), not the explicit testId string.
+        const { readdirSync } = await import("node:fs");
+        const testDirName = readdirSync(artifactDir).find((d) => existsSync(join(artifactDir, d, h.artifactLog!.harnessId, "origin.json")));
+        if (!testDirName) throw new Error("origin.json not found for harness");
+        const stepDir = join(artifactDir, testDirName, h.artifactLog!.harnessId, token.id, "pre-absence");
+        expect(existsSync(join(stepDir, "session.jsonl.absent"))).toBe(true);
+        expect(existsSync(join(stepDir, "session.jsonl"))).toBe(false);
+        expect(existsSync(join(stepDir, "tree.json"))).toBe(false);
+
+        // Metadata explicitly represents absence.
+        const meta = JSON.parse(readFileSync(join(stepDir, "meta.json"), "utf8")) as any;
+        expect(meta.fileAbsent).toBe(true);
+        expect(meta.fileBytes).toBe(0);
+        expect(meta.fileSha256).toBeNull();
+        expect(meta.phase).toBe("pre-absence");
+      } finally {
+        h.dispose();
+      }
+    } finally {
+      rmSync(artifactDir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * Row-to-test mapping for the native-tree retirement evidence matrix.
+ * Each row is identified by the original test name in this file. The mapping is
+ * documentation only — it does not alter any existing test, assertion, or control flow.
+ *
+ * Row 14 is the record-tool guard: a target equal to the current leaf is rejected at record
+ * time. The tool throws a plain Error (src/native-tree-handoff.ts:557). The exact test is
+ * "rejects a target equal to the current leaf before anything is recorded" in
+ * test/native-tree-handoff.test.ts. This is distinct from the command-time validation code
+ * TARGET_IS_LEAF (src/native-tree-handoff.ts:349), which the row-14 tool test does not
+ * exercise.
+ *
+ * Row 2b is a competitor-throw proxy: the competitor's escaping throw is swallowed by the
+ * real runner, and the chain continues so ours still wins. This is a proxy, not our own
+ * escaping throw. The gate retains row 2b as an unmet criterion.
+ */
+export const rowMapping: Record<string, { test: string; caveat?: string }> = {
+  "1": { test: "row 1 analogue: happy path commits the exact branch_summary, keeps old bytes, reloads the same state, and the next provider payload carries the summary" },
+  "2a": { test: "row 2a: our handler's caught internal error cancels; no session_tree; leaf unchanged" },
+  "2b": { test: "row 2b proxy (real runner, competitor's escaping throw is swallowed; the chain continues): ours still wins", caveat: "proxy only — not our own escaping throw" },
+  "3a": { test: "row 3a: competitor registered before ours; ours overwrites (last truthy) -> success with our details" },
+  "3b": { test: "row 3b: competitor registered after ours; its summary wins -> collision, reported as not ours" },
+  "4": { test: "row 4: competitor after ours returns a truthy non-summary -> default LLM fallback committed -> collision" },
+  "5a": { test: "row 5a: competitor before ours cancels; early cancel short-circuits ours -> cancellation, no session_tree" },
+  "5b": { test: "row 5b: competitor after ours cancels -> cancellation, no session_tree" },
+  "6": { test: "row 6: absent, malformed (sha256 mismatch), and superseded handoff ids reject before navigation; file unchanged" },
+  "7": { test: "row 7: restart after handoff leaves nothing pending; command re-validates from the file and applies" },
+  "8": { test: "row 1 analogue (old bytes prefix check covers row 8)" },
+  "11": { test: "row 11: ordinary navigation (no pending, summarize:false) keeps native behaviour: no summary, hook sees the event" },
+  "12": { test: "row 12: post-record metadata entries are accepted; custom_message is rejected as non-metadata" },
+  "13": { test: "row 13: no model configured -> rejected before navigation; hook never invoked" },
+  "14": { test: "rejects a target equal to the current leaf before anything is recorded (test/native-tree-handoff.test.ts)", caveat: "record-tool guard; command-time TARGET_IS_LEAF not exercised here" },
+  "15": { test: "row 15: navigateTree during streaming throws; the command waits for idle and then rejects (later user message)" },
+  "16": { test: "row 16: an effectful tool call after the record rejects pre-commit" },
+  "16b": { test: "row 16b: a later user message rejects pre-commit" },
+  "17": { test: "row 17: final same-turn response is the allowed shape (covered by row 1); row 19: no record -> no valid handoff" },
+  "18": { test: "row 18: post-commit session-file re-read failure is reported as uncertain, not success" },
+  "19": { test: "row 19 shape: a record without a same-turn final response rejects with NO_FINAL_RESPONSE" },
+};

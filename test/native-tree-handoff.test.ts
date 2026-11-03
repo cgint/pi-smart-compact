@@ -248,3 +248,109 @@ describe("record tool guard (row 14, tool-level; leaf-equal target cannot reach 
     expect(captureTools().has(TARGETS_TOOL)).toBe(true);
   });
 });
+
+describe("verifyFileBytes: strict append-set policy (source-grounded metadata accepted, anomalies rejected, malformed JSON controlled)", () => {
+  const before = Buffer.from('{"type":"session","id":"s"}\n{"type":"message","id":"m1"}\n');
+  const d = { targetId: "A1", text: "t", handoffId: "h", sha256: sha256Utf8("t") };
+  const summaryLine = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: "branch_summary", id: "B1", parentId: "A1", summary: "t", fromHook: true, details: { handoffId: "h", sha256: sha256Utf8("t") }, ...over }) + "\n";
+
+  it("rejects a duplicate summary id as an anomaly (controlled, not thrown)", () => {
+    const dup = JSON.stringify({ type: "branch_summary", id: "B1", parentId: "A1", summary: "t", fromHook: true, details: { handoffId: "h", sha256: sha256Utf8("t") } }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + dup)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/expected exactly one/);
+  });
+
+  it("rejects a summary id that already exists in the pre-commit file (replay, not a new summary)", () => {
+    const beforeWithB1 = Buffer.from('{"type":"session","id":"s"}\n{"type":"message","id":"B1"}\n');
+    const after = Buffer.concat([beforeWithB1, Buffer.from(summaryLine())]);
+    const r = verifyFileBytes(beforeWithB1, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/already exists in the pre-commit file/);
+  });
+
+  it("rejects an appended line with a numeric id as malformed (id must be a non-empty string)", () => {
+    const bad = JSON.stringify({ type: "branch_summary", id: 123, parentId: "A1", summary: "t", fromHook: true, details: { handoffId: "h", sha256: sha256Utf8("t") } }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(bad)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/not a well-formed session entry/);
+  });
+
+  it("rejects an appended line with a non-string type as malformed (type must be a non-empty string)", () => {
+    const bad = JSON.stringify({ type: 42, id: "X1", parentId: "A1" }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + bad)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/not a well-formed session entry/);
+  });
+
+  it("rejects an appended array line as malformed (must be an object)", () => {
+    const bad = JSON.stringify(["B1", "branch_summary"]) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + bad)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/not a well-formed session entry/);
+  });
+
+  it("rejects a conflicting summary (same id, wrong parent or text) as an anomaly", () => {
+    const conflict = JSON.stringify({ type: "branch_summary", id: "B1", parentId: "WRONG", summary: "other text", fromHook: true, details: { handoffId: "h", sha256: sha256Utf8("t") } }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(conflict)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/parentId|summary text/);
+  });
+
+  it("rejects an unexplained message append as an anomaly", () => {
+    const msg = JSON.stringify({ type: "message", id: "M1", parentId: "A1", timestamp: "2024-01-01T00:00:00.000Z", message: { role: "user", content: "x" } }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + msg)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/unexplained appended entries/);
+  });
+
+  it("rejects an unexplained compaction append as an anomaly", () => {
+    const comp = JSON.stringify({ type: "compaction", id: "C1", parentId: "A1", timestamp: "2024-01-01T00:00:00.000Z", summary: "s", firstKeptEntryId: "A1", tokensBefore: 10 }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + comp)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/unexplained appended entries/);
+  });
+
+  it("rejects a malformed appended JSON line as a controlled reason, not a throw", () => {
+    const malformed = '{"type":"branch_summary","id":"B1"\n';
+    const after = Buffer.concat([before, Buffer.from(malformed)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/not valid JSON/);
+    expect(r.reasons.join(" ")).not.toContain("branch_summary");
+  });
+
+  it("rejects a malformed appended JSON line with a valid summary present as a controlled reason", () => {
+    const malformed = '{broken\n';
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + malformed)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/not valid JSON/);
+    expect(r.reasons.join(" ")).not.toContain("broken");
+  });
+
+  it("accepts a cache-warming usage entry appended alongside the summary (source-grounded native metadata)", () => {
+    const usage = JSON.stringify({ type: "usage", id: "U1", parentId: "B1", timestamp: "2024-01-01T00:00:00.000Z", kind: "cache_warm", provider: "p", model: "m", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + usage)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(true);
+    expect(r.reasons).toHaveLength(0);
+  });
+
+  it("rejects a usage entry with a duplicate id as an anomaly", () => {
+    const usage1 = JSON.stringify({ type: "usage", id: "U1", parentId: "B1", timestamp: "2024-01-01T00:00:00.000Z", kind: "cache_warm", provider: "p", model: "m", usage: {} }) + "\n";
+    const usage2 = JSON.stringify({ type: "usage", id: "U1", parentId: "B1", timestamp: "2024-01-01T00:00:01.000Z", kind: "cache_warm", provider: "p", model: "m", usage: {} }) + "\n";
+    const after = Buffer.concat([before, Buffer.from(summaryLine() + usage1 + usage2)]);
+    const r = verifyFileBytes(before, after, { summaryEntryId: "B1", ...d });
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/unexplained appended entries/);
+  });
+});

@@ -58,6 +58,6 @@ npm run precommit
 
 Resets `node_modules` + lockfile, upgrades to latest semver-compatible versions, and runs audit. Keeps transitive vulnerabilities from accumulating.
 
-### Historical vulnerability check
+### Dependency audit (current)
 
-Last checked: 2026-07-06 — **0 vulnerabilities** (at that time, after upgrading `@earendil-works/pi-coding-agent` from `^0.74.0` to `^0.80.3`). The current dependency ranges are in `package.json`.
+Last checked: 2026-11-02 — **0 vulnerabilities** after the in-range lock refresh to `@earendil-works/pi-coding-agent` **1.5.0** (declared `^1.0.0`). `npm run precommit` passes typecheck and **265 tests**. The native-tree spike's live row 1 is accepted; row 15 exact is now OBSERVED and ACCEPTED (SDK pre-token guard race, `manifest-final.json` / `hjqcw7r` harness). The full evidence gate remains unmet because row 2b (own escaping throw) is unobserved. The user approved an as-is personal-use branch trial with that risk documented; this is not a passed gate or `/retire` migration. See `docs/native-tree-retirement-session-goal.md` for current status and `docs/native-tree-retirement-plan.md` for the full criterion-to-evidence record. The 2026-07-06 zero-vulnerability check was against the then-current `^0.80.3` range; it is historical, not the current baseline.

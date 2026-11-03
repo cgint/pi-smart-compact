@@ -354,7 +354,12 @@ export function validateHandoff(
 
 /**
  * File-level verification: `after` must start with the exact pre-commit bytes (old entries untouched),
- * and the appended lines must contain the expected branch_summary entry.
+ * and the appended lines must contain exactly one expected branch_summary entry.
+ *
+ * Minimal contract: preserve old bytes + exact summary + no unexplained context-changing appends.
+ * Other appended entries are accepted only if they match the six source-classified metadata types
+ * (METADATA_ENTRY_TYPES) with unique, non-colliding IDs. This is not full untrusted session schema
+ * validation, and does not claim all third-party extension effects are safe.
  */
 export function verifyFileBytes(
   before: Buffer,
@@ -368,18 +373,85 @@ export function verifyFileBytes(
   }
   const appended = after.subarray(before.length).toString("utf8");
   const lines = appended.split("\n").filter((l) => l.trim().length > 0);
-  const entries = lines.map((l) => JSON.parse(l) as Record<string, any>);
-  const found = entries.find((e) => e.id === expected.summaryEntryId);
-  if (!found) {
+  const entries: Record<string, any>[] = [];
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed) ||
+        typeof parsed.id !== "string" ||
+        parsed.id.length === 0 ||
+        typeof parsed.type !== "string" ||
+        parsed.type.length === 0
+      ) {
+        reasons.push(`appended line is not a well-formed session entry (id and type must be non-empty strings)`);
+        continue;
+      }
+      entries.push(parsed);
+    } catch {
+      reasons.push(`appended line is not valid JSON`);
+    }
+  }
+  const found = entries.filter((e) => e.id === expected.summaryEntryId);
+  if (found.length === 0) {
     reasons.push("appended file content has no entry with the summary entry id");
     return { ok: false, reasons };
   }
-  if (found.type !== "branch_summary") reasons.push(`file entry type is ${found.type}, expected branch_summary`);
-  if (found.parentId !== expected.targetId) reasons.push("file entry parentId is not the target");
-  if (found.fromHook !== true) reasons.push("file entry fromHook is not true");
-  if (found.summary !== expected.text) reasons.push("file entry summary text differs from the recorded text");
-  if (found.details?.handoffId !== expected.handoffId || found.details?.sha256 !== expected.sha256) {
+  if (found.length > 1) {
+    reasons.push(`appended file content has ${found.length} entries with the summary entry id; expected exactly one`);
+    return { ok: false, reasons };
+  }
+  const entry = found[0];
+  if (entry.type !== "branch_summary") reasons.push(`file entry type is ${entry.type}, expected branch_summary`);
+  if (entry.parentId !== expected.targetId) reasons.push("file entry parentId is not the target");
+  if (entry.fromHook !== true) reasons.push("file entry fromHook is not true");
+  if (entry.summary !== expected.text) reasons.push("file entry summary text differs from the recorded text");
+  if (entry.details?.handoffId !== expected.handoffId || entry.details?.sha256 !== expected.sha256) {
     reasons.push("file entry details do not match the pending handoffId/sha256");
+  }
+  // Shared source-grounded metadata set (not a duplicate allowlist): the six types that
+  // METADATA_ENTRY_TYPES classifies as metadata. Any other appended entry type — a second
+  // branch_summary, a compaction, a custom_message, a message, or an unknown type — is an anomaly.
+  // Duplicate IDs within the appended set (including replay of IDs already in `before`) are also
+  // anomalies, because the session file is append-only and each entry has a unique ID.
+  const beforeIds = new Set(
+    before.toString("utf8").split("\n").filter((l) => l.trim().length > 0).map((l) => {
+      try {
+        const e = JSON.parse(l);
+        return e && typeof e === "object" && typeof e.id === "string" && e.id.length > 0 ? e.id : null;
+      } catch {
+        return null;
+      }
+    }).filter((id) => id !== null),
+  );
+  // The summary ID itself must be fresh: if it already appears in `before`, the append is a
+  // replay of an existing entry, not a new summary.
+  if (beforeIds.has(expected.summaryEntryId)) {
+    reasons.push(`summary entry id ${expected.summaryEntryId} already exists in the pre-commit file; this is a replay, not a new summary`);
+    return { ok: false, reasons };
+  }
+  const others = entries.filter((e) => e.id !== expected.summaryEntryId);
+  const seenIds = new Set<string>();
+  const anomalies: string[] = [];
+  for (const e of others) {
+    if (!METADATA_ENTRY_TYPES.has(e.type)) {
+      anomalies.push(`${e.type}(${e.id})`);
+      continue;
+    }
+    if (seenIds.has(e.id)) {
+      anomalies.push(`duplicate ${e.type}(${e.id})`);
+      continue;
+    }
+    if (beforeIds.has(e.id)) {
+      anomalies.push(`replayed ${e.type}(${e.id})`);
+      continue;
+    }
+    seenIds.add(e.id);
+  }
+  if (anomalies.length > 0) {
+    reasons.push(`unexplained appended entries beyond the summary: ${anomalies.join(", ")}`);
   }
   return { ok: reasons.length === 0, reasons };
 }
@@ -683,7 +755,18 @@ export default function registerNativeTreeHandoff(
       const leafEntry = leafAfter ? (sm.getEntry(leafAfter) as BranchEntry | undefined) : undefined;
       const committedOurs = leafEntry?.type === "branch_summary" && summaryEntryMatches(leafEntry as never, pending).length === 0;
       reasons.push(committedOurs ? "verifier: our summary is the leaf" : "verifier: our summary is not the leaf");
-      return { ...base, status: "thrown", message: `Tree handoff failed: navigateTree threw (${navError}). ${reasons.join("; ")}`, reasons, summaryEntryId: committedOurs ? leafEntry?.id : undefined };
+      // Verify persisted state after a caught navigation error: if the file is unreadable
+      // or the bytes differ from the preflight snapshot, the outcome is uncertain (the
+      // persisted state is unverified). If byte-identical, retain the thrown failure but
+      // explicitly state the persisted file is unchanged and report the actual in-memory leaf.
+      const afterNavError = await readFileState(input.readSessionFile, file);
+      if (afterNavError.error !== undefined) {
+        return { ...base, status: "uncertain", message: `Tree handoff uncertain: navigateTree threw (${navError}). Persisted state unverified: ${afterNavError.error}. In-memory leaf: ${leafAfter ?? "null"}.`, reasons: [...reasons, "persisted-state-unverified"] };
+      }
+      if (afterNavError.bytes === undefined || !afterNavError.bytes.equals(before)) {
+        return { ...base, status: "uncertain", message: `Tree handoff uncertain: navigateTree threw (${navError}). Persisted state unverified: file bytes differ from preflight snapshot. In-memory leaf: ${leafAfter ?? "null"}.`, reasons: [...reasons, "persisted-state-unverified"] };
+      }
+      return { ...base, status: "thrown", message: `Tree handoff failed: navigateTree threw (${navError}). ${reasons.join("; ")}. Persisted file unchanged (byte-identical to preflight). In-memory leaf: ${leafAfter ?? "null"}.`, reasons, summaryEntryId: committedOurs ? leafEntry?.id : undefined };
     }
 
     if (navResult?.cancelled) {
