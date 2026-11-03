@@ -57,7 +57,7 @@ Pi 1.4.0 global install, `/opt/homebrew/lib/node_modules/@earendil-works/pi-codi
 - `before_provider_request` [confirmed: `dist/core/extensions/types.d.ts:694`, registration at :1203].
 - `ui.confirm` and `ui.select` exist [reviewer-cited: `types.d.ts:74`, `:76`].
 - Provider-facing shape: the model sees Pi's prefix and suffix around summary text [reviewer-cited: `messages.js:13–16`, `:97–103`].
-- Extension registration [confirmed]: `index.ts:4` imports `registerRetirePrompt`; `index.ts:9` calls it. `src/episode-retirement-prompt.ts:7–9` is gated on `EPISODE_RETIREMENT_ENABLED_VAR === "true"` and registers `resources_discover` with `promptPaths`. `/retire` is a prompt template, not a command.
+- Extension registration [confirmed, historical spike note — the gate described here has since been removed]: `index.ts:4` imports `registerRetirePrompt`; `index.ts:9` calls it. `src/episode-retirement-prompt.ts:7–9` is gated on `EPISODE_RETIREMENT_ENABLED_VAR === "true"` and registers `resources_discover` with `promptPaths`. `/retire` is a prompt template, not a command. (Current state: `/retire` registers unconditionally; no env gate.)
 - Live provider: `~/.pi/agent/auth.json` exists [reviewer-cited]; whether a model responds is **[unverified]** until precondition 1 passes.
 
 Cache: **[hypothesis]** only; no cache claim.
@@ -99,7 +99,7 @@ Post-record entries that are not tool calls or user messages are classified **fr
 | No pending (ordinary `/tree`, or `summarize:false`) | `undefined` | Native behaviour; explicit no-op, not a fallback |
 
 - **Escaping throw** from our handler (not caught by us): the runner swallows it and the default summarizer can run [reviewer-cited]. This is a known hazard recorded as a failure mode, not a pass.
-- **Competing handlers** are outside our control. Last truthy result wins; early cancel short-circuits. Detection is after the fact. **Fail-closed against competitors is not claimed.**
+- **Competing handlers** are outside our control. Last truthy result wins; early cancel short-circuits. Detection is after the fact. **Fail-closed against competitors is not claimed.** Pre-existing hazard: Pi's tree-preparation event carries no `handoffId`, so a competing navigation (including one landing on the same target/leaf while a handoff is pending) cannot be attributed or prevented by our handler; the post-commit verifier only reports what actually committed. This is documented as a residual, unverified hazard — no source injection or invented verification is used to close it. When no handoff is pending, our handler is an explicit no-op and ordinary `/tree` behaves natively.
 - **Success is not "navigation not cancelled".** Success requires the post-commit verifier to confirm: summary entry `details.handoffId` and `sha256` match the pending record; `fromHook` is true; text equals the recorded text; parent equals `targetId`.
 
 ## Pending state and invocation
@@ -211,6 +211,16 @@ Each row records: session `.jsonl` before and after (byte comparison of old entr
 - Row 2b (own escaping throw): unobserved. No ordinary supported-API path demonstrated that forces our handler's own escaping throw without a source mutation or dedicated fault-injection seam. Not claimed impossible or runner-immune. The competitor-throw proxy is a proxy, not equivalent.
 - Row 15 exact combined scenario: now observed and accepted via the real SDK pre-token busy race; see the current status and `streaming-command-final/manifest-final.json` above. Non-noop ordinary recovery and same-record reapplication separately prove pending and in-flight cleanup.
 - The 267-test candidate and `deterministic-current/` artifacts are SUPERSEDED. The 260-test corrected-final baseline is historical.
+
+## Current state (2026-07-06) — native-tree is sole/default creation path
+
+This is a later product-path decision; the historical sections below are preserved as-is and the formal gate status (row 2b unobserved) is unchanged. The historical acceptance evidence was gathered for the opt-in spike and was **not verified against this migration**; row 2b remains unobserved, so the own-handler escaping-throw hazard still stands.
+
+- `index.ts` registers `registerNativeTreeHandoff` **unconditionally**; `PI_NATIVE_TREE_HANDOFF_ENABLED` is no longer read (removed from `src/native-tree-handoff.ts`). The two tools (`native_tree_targets`, `handoff_record`) and `/tree-handoff <handoffId>` are always available.
+- Episode-retirement **creation** tools (`inspect_episode_retirement`, `retire_episodes`) are no longer registered. `PI_EPISODE_RETIREMENT_ENABLED` no longer gates registration. Historical receipts (V1–V5) remain projectable and recallable via the read-only `recall_episode` tool and the `context` projection handler (no appends, no model/network egress) — **only while the receipt chain is valid and reachable on the current branch**; a branch switch that drops the receipts makes their projection/recall unavailable there.
+- `/retire` (`src/episode-retirement-prompt.ts`) is always discoverable; `prompts/retire.md` now guides the active agent to `native_tree_targets` → `handoff_record` → tell the user the exact `/tree-handoff <handoffId>` to run and explicitly confirm, and never to claim it was applied.
+- Removed creation-path tests are not retained in-tree (git history holds the originals); the still-live read path is covered by `test/episode-retirement.test.ts` against explicit static fixtures plus authentic V5 initial→forward/recompose/deepen chains (real projection + recall).
+- The dead capsule-model exports (`parseCapsuleModel`, `configuredReasoningEffort`) and the unused `EPISODE_RETIREMENT_ENABLED_VAR` were removed; no runtime knobs remain for authoring receipts.
 
 ## Implementation and evidence (2026-11-02, historical macOS run — preserved as-is)
 

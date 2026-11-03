@@ -14,7 +14,6 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
  * verifier classifies the outcome from the session file and the in-memory branch.
  */
 
-export const NATIVE_TREE_HANDOFF_ENABLED_VAR = "PI_NATIVE_TREE_HANDOFF_ENABLED";
 export const HANDOFF_SCHEMA = "native-tree-handoff/v1";
 export const HANDOFF_TOOL = "handoff_record";
 export const TARGETS_TOOL = "native_tree_targets";
@@ -156,10 +155,6 @@ type SharedState = {
 
 export function sha256Utf8(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
-}
-
-export function isNativeTreeHandoffEnabled(): boolean {
-  return process.env[NATIVE_TREE_HANDOFF_ENABLED_VAR] === "true";
 }
 
 /**

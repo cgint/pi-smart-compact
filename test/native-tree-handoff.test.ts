@@ -247,6 +247,33 @@ describe("record tool guard (row 14, tool-level; leaf-equal target cannot reach 
   it("registers the targets inspection tool", () => {
     expect(captureTools().has(TARGETS_TOOL)).toBe(true);
   });
+
+  it("registers both tools and the /tree-handoff command with no env flag set (sole/default path)", () => {
+    const saved = process.env.PI_NATIVE_TREE_HANDOFF_ENABLED;
+    delete process.env.PI_NATIVE_TREE_HANDOFF_ENABLED;
+    try {
+      const tools = new Map<string, any>();
+      const commands: string[] = [];
+      const fakePi = {
+        registerTool: (t: any) => tools.set(t.name, t),
+        on: () => {},
+        registerCommand: (name: string) => commands.push(name),
+      } as any;
+      registerNativeTreeHandoff(fakePi);
+      expect(tools.has(TARGETS_TOOL)).toBe(true);
+      expect(tools.has(HANDOFF_TOOL)).toBe(true);
+      expect(commands).toContain("tree-handoff");
+    } finally {
+      if (saved === undefined) delete process.env.PI_NATIVE_TREE_HANDOFF_ENABLED;
+      else process.env.PI_NATIVE_TREE_HANDOFF_ENABLED = saved;
+    }
+  });
+
+  it("index.ts registers native-tree handoff unconditionally (no env gate)", async () => {
+    const src = await import("node:fs/promises").then((fs) => fs.readFile(new URL("../index.ts", import.meta.url), "utf8"));
+    expect(src).toContain("registerNativeTreeHandoff(pi);");
+    expect(src).not.toMatch(/isNativeTreeHandoffEnabled|PI_NATIVE_TREE_HANDOFF_ENABLED/);
+  });
 });
 
 describe("verifyFileBytes: strict append-set policy (source-grounded metadata accepted, anomalies rejected, malformed JSON controlled)", () => {

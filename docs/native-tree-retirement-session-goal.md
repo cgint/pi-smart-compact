@@ -37,3 +37,14 @@ Criterion-to-evidence details: [native-tree-retirement-plan.md](native-tree-reti
 - Bounded opt-in spike only; no full migration, production-readiness claim, or cache-benefit claim.
 - Preserve the pass gate; do not redefine success to accommodate failures.
 - Keep detailed acceptance evidence and final status in `docs/native-tree-retirement-plan.md`; this file owns session scope and approach, not a duplicate evidence log.
+
+## Current-state addendum (2026-07-06) — native-tree is now sole/default
+
+The above records the spike's acceptance phase and remain valid history. A later user decision moved native-tree handoff from an opt-in spike to the **sole and default** context-retirement creation path:
+
+- `index.ts` registers `registerNativeTreeHandoff` unconditionally; `PI_NATIVE_TREE_HANDOFF_ENABLED` is no longer read.
+- The episode-retirement **creation** tools (`inspect_episode_retirement`, `retire_episodes`) are no longer registered; `PI_EPISODE_RETIREMENT_ENABLED` no longer gates anything.
+- Historical episode-retirement receipts remain projectable and recallable via the read-only `recall_episode` tool and `context` projection handler (no appends, no model/network egress) — **only while the receipt chain is valid and reachable on the current branch**; a branch switch that drops the receipts makes their projection/recall unavailable there.
+- `/retire` is always available and now guides the active agent to `native_tree_targets` → `handoff_record` → tell the user the exact `/tree-handoff <handoffId>` to run and explicitly confirm; the agent must not claim it was applied.
+
+The formal row-2b gate status above is unchanged; this addendum records a product-path decision, not a gate pass. The historical acceptance evidence above was gathered for the opt-in spike and was **not verified against this migration**; row 2b remains unobserved (the own-handler escaping-throw hazard still stands). Removed creation-path tests are not retained in-tree; git history holds the originals, and the still-live read path is covered by active offline regressions (including authentic V5 initial→forward/recompose/deepen chains).

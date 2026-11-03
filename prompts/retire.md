@@ -1,12 +1,20 @@
 ---
-description: Ask the active agent to assess anchored episode retirement
+description: Ask the active agent to assess a native-tree branch handoff
 argument-hint: "[optional continuation emphasis]"
 ---
 
-Assess whether anchored episode retirement is appropriate. **Always call `inspect_episode_retirement` first, then page as needed** before every `retire_episodes` call. Inspection mechanically lists safe candidates; it excludes active work and returns the witness-scoped candidate ids (`ep-N`) to use as `fromEpisodeInclusive`, plus the `inspectionWitness` authority.
+Assess whether a native-tree branch handoff is appropriate. This is the sole/default context-retirement path. **Do not invent or claim that anything has been applied.**
 
-The active agent independently decides whether retirement is worthwhile, which anchor to use, and the continuation goal. Choose `fromEpisodeInclusive` as the candidate **id** (`ep-N`) of the **oldest included completed episode** — the candidate's `id` field, never its `userPrompt` preview; it retires that episode through the newest completed episode, never active or unresolved work. Supply the returned `inspectionWitness` unchanged.
+If a handoff is worthwhile:
 
-Please independently author the smallest critical `pinnedWorkingState` in your own words. It must be a non-blank state pin, not a generic summary, raw transcript, source/world knowledge, or filler. Keep only critical working state needed for continuation. The capsule model must not decide the boundary, goal, or pin; it receives redacted guidance and authors only the complementary five-key capsule.
+1. Call `native_tree_targets` to list candidate non-user ancestors on the current branch (newest first, with entry ids and excerpts). Choose one assistant entry id as `targetId`.
+2. Author the exact handoff text yourself — the continuation state that must survive the abandoned branch below the target. Keep only critical working state needed to continue; do not copy raw transcripts, source/world knowledge, or filler. The handoff must carry forward, in the text itself:
+   - the **active work** (what is being worked on right now) and the **next step**;
+   - **unresolved tasks / open questions** that are still pending;
+   - **constraints, decisions, and invariants** that must keep governing the work.
+   Do not pick a boundary so early that it discards this live state.
+3. **Legacy projected capsule/pin:** If `targetId` sits *before* a historical episode-retirement receipt on the current branch, that receipt will not be on the resulting branch — so its projection and recall become unavailable there. Do not assume the earlier projection survives the switch. If that legacy capsule/pin still holds relevant objective, decisions, unresolved items, or pinned state, explicitly fold its content into the handoff text as continuation state. (The original branch remains accessible for full recovery, but the resulting branch will not show the old projection.)
+4. Call `handoff_record` **once** with that `targetId` and exact `text`. Then give a short final response in the same turn and do not call any other tool after it.
+5. `handoff_record` returns a `handoffId`. Tell the user the exact command to apply it: `/tree-handoff <handoffId>` (substitute the real returned id). Explain that **the user must run this command themselves and explicitly confirm**; it is not applied automatically and nothing is applied until the user confirms.
 
-If retirement is not safe or worthwhile, explain why and do not force it. Optional continuation emphasis: ${ARGUMENTS:-No extra continuation emphasis supplied.} It means only what should remain salient or happen next—never a boundary, goal, or count.
+If a handoff is not safe or worthwhile, explain why and do not force it. Never report a branch switch as done — only the user's explicit `/tree-handoff <handoffId>` confirmation performs it. Optional continuation emphasis: ${ARGUMENTS:-No extra continuation emphasis supplied.} It means only what should remain salient or happen next.
