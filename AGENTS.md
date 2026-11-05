@@ -47,16 +47,12 @@ npm run precommit
 
 Runs TypeScript typecheck, tests, then `npm audit --audit-level=moderate`; all must pass.
 
-## Regular maintenance
+## Maintenance
 
-### Dependency refresh (run monthly or before releases)
-
-```bash
-bash ~/.local/bin/node_update_reinstall.sh
-npm run precommit
-```
-
-Resets `node_modules` + lockfile, upgrades to latest semver-compatible versions, and runs audit. Keeps transitive vulnerabilities from accumulating.
+Single source of truth: `.pi/skills/repo-maintenance/SKILL.md` (self-sufficient; no external scripts).
+Test+audit gate: `npm run precommit` (typecheck + `vitest run` + `npm audit --audit-level=moderate`) — all must pass.
+Test suite: `npm test` (vitest run; ~114 tests, 5 files).
+Dependency upgrades: follow the skill's procedure — bump devDependencies to latest (majors included), regenerate the lockfile fresh, re-run precommit, then push only on a clean tree. `peerDependencies` are floors and must never be lowered.
 
 ### Dependency audit (current)
 

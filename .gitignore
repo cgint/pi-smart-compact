@@ -9,7 +9,10 @@ node_modules/
 # macOS
 .DS_Store
 
-.pi/
+# Exception: the repo-maintenance skill must live in the repo (self-sufficient
+# maintenance routine for any agent opening this repo). Tracked, not an artifact.
+/.pi/*
+!.pi/skills/
 .pi-rlm/
 
 # ctag index
